@@ -113,6 +113,10 @@ $properties-vt-checkbox-width: 45px;
 		}
 	}
 
+	.test-customized-row {
+		border-bottom: 1px solid $ui-03;
+	}
+
 	.properties-vt-row-selected {
 		background-color: $selected-ui;
 		border-bottom: 1px solid $hover-selected-ui;

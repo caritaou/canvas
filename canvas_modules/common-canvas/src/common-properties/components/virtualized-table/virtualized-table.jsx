@@ -20,8 +20,9 @@ import { Column, Table } from "react-virtualized/dist/commonjs/Table";
 import { Checkbox, Loading } from "carbon-components-react";
 import Icon from "./../../../icons/icon.jsx";
 import Tooltip from "./../../../tooltip/tooltip.jsx";
-import { TOOL_TIP_DELAY, SORT_DIRECTION, STATES, ROW_SELECTION, CARBON_ICONS } from "./../../constants/constants";
+import { TOOL_TIP_DELAY, SORT_DIRECTION, STATES, ROW_SELECTION, CARBON_ICONS, ROW_HEIGHT } from "./../../constants/constants";
 
+import NestedTable from "./../virtualized-table/nested-table.jsx";
 import { isEmpty } from "lodash";
 import { v4 as uuid4 } from "uuid";
 import classNames from "classnames";
@@ -53,6 +54,8 @@ class VirtualizedTable extends React.Component {
 		this.headerColRenderer = this.headerColRenderer.bind(this);
 		this.onRowClick = this.onRowClick.bind(this);
 		this.overSelectOption = this.overSelectOption.bind(this);
+		this._getPropsHeight = this._getPropsHeight.bind(this);
+		this._getRowHeight = this._getRowHeight.bind(this);
 	}
 
 	componentDidUpdate() {
@@ -244,22 +247,35 @@ class VirtualizedTable extends React.Component {
 
 		const width = (parseInt(style.width, 10)) + "px"; // Subtract 2px to account for row borders
 		const newStyle = Object.assign({}, style, { width: width });
+		const nestedTableStyle = { height: "350px" };
 
 		// Empty style required on cell for react-virtualized. This div wrapper is required to apply the onDoubleClick handler.
 		return (<div style={{}} key={key} className="properties-vt-double-click" onDoubleClick={(evt) => this.onRowDoubleClick(evt, rowData.rowKey, index)}>
-			<div
-				className={classNames(className,
-					{ "properties-vt-row-selected": selectedRow },
-					{ "properties-vt-row-disabled": rowDisabled }
-				)}
-				role="properties-data-row"
-				style={newStyle}
-				onMouseDown={(evt) => this.onRowClick(evt, rowData, index)}
-			>
-				{selectOption}
-				{columns}
+			<div style={newStyle}>
+				<div
+					className={classNames(className,
+						{ "properties-vt-row-selected": selectedRow },
+						{ "properties-vt-row-disabled": rowDisabled }
+					)}
+					role="properties-data-row"
+					onMouseDown={(evt) => this.onRowClick(evt, rowData, index)}
+				>
+					{selectOption}
+					{columns}
+				</div>
+				<div className="test-customized-row" style={nestedTableStyle}>
+					<NestedTable />
+				</div>
 			</div>
 		</div>);
+	}
+
+	_getRowHeight({ index }) {
+		return this._getPropsHeight(index) + 350; // 350 is height of nested table, will have to calculate depending on how many rows the nested table has
+	}
+
+	_getPropsHeight(index) {
+		return this.props.rowHeight ? this.props.rowHeight(index) : ROW_HEIGHT;
 	}
 
 	render() {
@@ -290,7 +306,7 @@ class VirtualizedTable extends React.Component {
 								onHeaderClick={this.props.onHeaderClick}
 
 								rowClassName="properties-vt-row-class"
-								rowHeight={this.props.rowHeight ? this.props.rowHeight : 40}
+								rowHeight={this._getRowHeight}
 
 								rowCount={this.state.rowCount}
 								rowGetter={this.props.rowGetter}

@@ -395,7 +395,7 @@ export default class FlexibleTable extends React.Component {
 	}
 
 	// Function that returns the height of a row given its index
-	rowHeight({ index }) {
+	rowHeight(index) {
 		return ROW_HEIGHT;
 	}
 
