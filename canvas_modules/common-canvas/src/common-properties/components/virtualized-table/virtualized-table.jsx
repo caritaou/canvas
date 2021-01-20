@@ -247,7 +247,7 @@ class VirtualizedTable extends React.Component {
 
 		const width = (parseInt(style.width, 10)) + "px"; // Subtract 2px to account for row borders
 		const newStyle = Object.assign({}, style, { width: width });
-		const nestedTableStyle = { height: "350px" };
+		const nestedTableStyle = { height: "6290px" };
 
 		// Empty style required on cell for react-virtualized. This div wrapper is required to apply the onDoubleClick handler.
 		return (<div style={{}} key={key} className="properties-vt-double-click" onDoubleClick={(evt) => this.onRowDoubleClick(evt, rowData.rowKey, index)}>
@@ -271,7 +271,7 @@ class VirtualizedTable extends React.Component {
 	}
 
 	_getRowHeight({ index }) {
-		return this._getPropsHeight(index) + 350; // 350 is height of nested table, will have to calculate depending on how many rows the nested table has
+		return this._getPropsHeight(index) + 6290; // 6290 is height of nested table, will have to calculate depending on how many rows the nested table has
 	}
 
 	_getPropsHeight(index) {
