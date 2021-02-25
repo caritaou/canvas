@@ -1,0 +1,46 @@
+/*
+ * Copyright 2021 Elyra Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+.properties-multiselect-none-selected {
+
+	// This is required to override the multiselect 'clear all' option
+	.bx--list-box__selection--multi {
+		display: none;
+	}
+	// Remove padding left from 'clear all' option
+	input.bx--text-input--empty {
+		padding-left: $spacing-05;
+	}
+
+	// Remove the checkmark from the checkbox if nothing is selected
+	.bx--checkbox:checked + .bx--checkbox-label::before, // filterable multiselect
+	.bx--checkbox-label[data-contained-checkbox-state="true"]::before { // regular multiselect
+		background-color: transparent;
+	}
+	.bx--checkbox:checked + .bx--checkbox-label::after, // filterable multiselect
+	.bx--checkbox-label[data-contained-checkbox-state="true"]::after { // regular multiselect
+		transform: scale(0) rotate(-45deg);
+	}
+
+	// Remove the rows highlighted if nothing is selected
+	div.bx--list-box__menu-item--active {
+		background-color: transparent;
+	}
+	.bx--list-box__menu-item--highlighted .bx--list-box__menu-item__option, // filterable multiselect
+	.bx--list-box__menu-item--active + .bx--list-box__menu-item > .bx--list-box__menu-item__option {
+		border-top-color: $button-separator;
+	}
+}

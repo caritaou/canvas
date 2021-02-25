@@ -18,6 +18,7 @@ import React from "react";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
 import { MultiSelect } from "carbon-components-react";
+import { isEqual, intersection } from "lodash";
 import * as ControlUtils from "./../../util/control-utils";
 import ValidationMessage from "./../../components/validation-message";
 import classNames from "classnames";
@@ -28,18 +29,40 @@ import { formatMessage } from "./../../util/property-utils";
 class MultiSelectControl extends React.Component {
 	constructor(props) {
 		super(props);
+		this.state = {
+			items: this.genSelectOptions(this.props.value),
+			selectedOptions: this.getSelectedOption(this.genSelectOptions(this.props.value), this.props.value)
+		};
+
 		this.getSelectedOption = this.getSelectedOption.bind(this);
 		this.genSelectOptions = this.genSelectOptions.bind(this);
 		this.handleOnChange = this.handleOnChange.bind(this);
+		this.updateValueFromFilterEnum = this.updateValueFromFilterEnum.bind(this);
+	}
+
+	componentDidMount() {
+		this.updateValueFromFilterEnum(true);
+	}
+
+	componentDidUpdate(prevProps) {
+		// only update if filter options have changed. Fixes issue where filter options are updated after value in setProperties
+		if (!isEqual(this.props.controlOpts, prevProps.controlOpts)) {
+			this.updateValueFromFilterEnum();
+		}
 	}
 
 	getSelectedOption(options, selectedValues) {
 		const values = PropertyUtils.stringifyFieldValue(selectedValues, this.props.control);
 		const selectedOptions = [];
 		if (values) {
-			values.forEach((value) => selectedOptions.push(options.find(function(option) {
-				return option.value === value;
-			})));
+			values.forEach((value) => {
+				const selected = options.find(function(option) {
+					return option.value === value;
+				});
+				if (typeof selected !== "undefined") {
+					selectedOptions.push(selected);
+				}
+			});
 		}
 		return selectedOptions;
 	}
@@ -52,11 +75,24 @@ class MultiSelectControl extends React.Component {
 				label: this.props.controlOpts.valueLabels[j]
 			});
 		}
-		const selectedOptions = this.getSelectedOption(options, selectedValues);
-		return {
-			options: options,
-			selectedOptions: selectedOptions
-		};
+		return options;
+	}
+
+	// this is needed in order to reset the property value when a value is filtered out.
+	updateValueFromFilterEnum(skipValidateInput) {
+		// update property value if value isn't in current enum value
+		if (this.props.value !== null &&
+			typeof this.props.value !== "undefined" && this.props.value.length > 0 && intersection(this.props.controlOpts.values, this.props.value).length === 0) {
+			let defaultValue = [];
+			// set to default value if default value is in filtered enum list
+			if (this.props.control.valueDef && this.props.control.valueDef.defaultValue &&
+				intersection(this.props.controlOpts.values, this.props.control.valueDef.defaultValue).length === this.props.control.valueDef.defaultValue.length) {
+				defaultValue = this.props.control.valueDef.defaultValue;
+			}
+
+			this.props.controller.updatePropertyValue(this.props.propertyId, defaultValue, skipValidateInput);
+		}
+		this.setState({ items: this.genSelectOptions(this.props.value) });
 	}
 
 	handleOnChange(evt) {
@@ -68,7 +104,14 @@ class MultiSelectControl extends React.Component {
 	}
 
 	render() {
-		const multiSelectDropdown = this.genSelectOptions(this.props.value);
+		// This workaround is required for modifying the list of initial selected items
+		if (this.state && this.state.selectedOptions) {
+			this.state.selectedOptions.splice(0);
+		}
+		const selectedOptions = this.getSelectedOption(this.genSelectOptions(this.props.value), this.props.value);
+		selectedOptions.forEach((option) => {
+			this.state.selectedOptions.push(option);
+		});
 
 		const listBoxMenuIconTranslationIds = {
 			"close.menu": formatMessage(this.reactIntl, MESSAGE_KEYS.DROPDOWN_TOOLTIP_CLOSEMENU),
@@ -83,7 +126,7 @@ class MultiSelectControl extends React.Component {
 		const defaultOptionsSelectedLabel = formatMessage(this.reactIntl, MESSAGE_KEYS.MULTISELECT_DROPDOWN_OPTIONS_SELECTED_LABEL);
 
 		let label = "";
-		if (multiSelectDropdown.selectedOptions.length === 0) { // Display message for no options selected
+		if (this.state.selectedOptions.length === 0) { // Display message for no options selected
 			label = this.props.controller.getResource(overrideEmptyLabelKey, defaultEmptyLabel);
 		} else { // Display message for multiple options selected
 			label = this.props.controller.getResource(overrideOptionsSelectedLabelKey, defaultOptionsSelectedLabel);
@@ -93,10 +136,11 @@ class MultiSelectControl extends React.Component {
 		if (this.props.control.filterable) {
 			dropdownComponent = (<MultiSelect.Filterable
 				id={`${ControlUtils.getDataId(this.props.propertyId)}-multiselect-filterable`}
+				className={classNames({ "properties-multiselect-none-selected": this.state.selectedOptions.length === 0 })}
 				disabled={this.props.state === STATES.DISABLED}
 				translateWithId={(id) => listBoxMenuIconTranslationIds[id]}
-				items={multiSelectDropdown.options}
-				initialSelectedItems={multiSelectDropdown.selectedOptions}
+				items={this.state.items}
+				initialSelectedItems={this.state.selectedOptions}
 				onChange={this.handleOnChange}
 				placeholder={label}
 				light
@@ -104,10 +148,11 @@ class MultiSelectControl extends React.Component {
 		} else {
 			dropdownComponent = (<MultiSelect
 				id={`${ControlUtils.getDataId(this.props.propertyId)}-multiselect`}
+				className={classNames({ "properties-multiselect-none-selected": this.state.selectedOptions.length === 0 })}
 				disabled={this.props.state === STATES.DISABLED}
 				translateWithId={(id) => listBoxMenuIconTranslationIds[id]}
-				items={multiSelectDropdown.options}
-				initialSelectedItems={multiSelectDropdown.selectedOptions}
+				items={this.state.items}
+				initialSelectedItems={this.state.selectedOptions}
 				onChange={this.handleOnChange}
 				label={label}
 				light

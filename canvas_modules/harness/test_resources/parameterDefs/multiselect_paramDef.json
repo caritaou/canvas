@@ -16,6 +16,10 @@
     "multiselect_hidden": [],
     "disabled": true,
     "multiselect_disabled": [],
+    "filter": false,
+    "multiselect_filtered": ["orange"],
+    "filter_default": false,
+    "multiselect_filtered_default": ["purple"],
     "multiselect_table": [
       [
         ["cat"],
@@ -166,6 +170,39 @@
         "blue",
         "purple"
       ],
+      "required": true
+    },
+    {
+      "id": "filter",
+      "type": "boolean"
+    },
+    {
+      "id": "multiselect_filtered",
+      "enum": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "purple"
+      ],
+      "required": true
+    },
+    {
+      "id": "filter_default",
+      "type": "boolean"
+    },
+    {
+      "id": "multiselect_filtered_default",
+      "enum": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "purple"
+      ],
+      "default": ["blue"],
       "required": true
     },
     {
@@ -350,6 +387,38 @@
         "control": "multiselect"
       },
       {
+        "parameter_ref": "filter",
+        "label": {
+          "default": "Filter 'multiselect filtered'"
+        }
+      },
+      {
+        "parameter_ref": "multiselect_filtered",
+        "label": {
+          "default": "multiselect filtered"
+        },
+        "description": {
+          "default": "multiselect dropdown to have values 'red', 'blue', and 'green'"
+        },
+        "control": "multiselect"
+      },
+      {
+        "parameter_ref": "filter_default",
+        "label": {
+          "default": "Filter 'multiselect filtered default'"
+        }
+      },
+      {
+        "parameter_ref": "multiselect_filtered_default",
+        "label": {
+          "default": "multiselect filtered with default value"
+        },
+        "description": {
+          "default": "multiselect dropdown to have values 'red', 'blue', and 'green'"
+        },
+        "control": "multiselect"
+      },
+      {
         "parameter_ref": "multiselect_table",
         "label": {
           "default": "multiselect table"
@@ -440,6 +509,19 @@
         ]
       },
       {
+        "id": "multiselect-filters",
+        "label": {
+          "default": "Filters"
+        },
+        "type": "controls",
+        "parameter_refs": [
+          "filter",
+          "multiselect_filtered",
+          "filter_default",
+          "multiselect_filtered_default"
+        ]
+      },
+      {
         "id": "multiselect-tables",
         "label": {
           "default": "Table"
@@ -526,6 +608,44 @@
             "parameter_ref": "disabled",
             "op": "equals",
             "value": false
+          }
+        }
+      }
+    },
+    {
+      "enum_filter": {
+        "target": {
+          "parameter_ref": "multiselect_filtered",
+          "values": [
+            "red",
+            "blue",
+            "green"
+          ]
+        },
+        "evaluate": {
+          "condition": {
+            "parameter_ref": "filter",
+            "op": "equals",
+            "value": true
+          }
+        }
+      }
+    },
+    {
+      "enum_filter": {
+        "target": {
+          "parameter_ref": "multiselect_filtered_default",
+          "values": [
+            "red",
+            "blue",
+            "green"
+          ]
+        },
+        "evaluate": {
+          "condition": {
+            "parameter_ref": "filter_default",
+            "op": "equals",
+            "value": true
           }
         }
       }
