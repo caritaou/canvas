@@ -308,7 +308,8 @@ export default class PropertiesStore {
 					validation_id: rowMessage.validation_id,
 					type: rowMessage.type,
 					text: rowMessage.text,
-					required: rowMessage.required };
+					required: rowMessage.required,
+					displayError: rowMessage.displayError };
 				errorMsgCount += (rowMessage.type === CONDITION_MESSAGE_TYPE.ERROR) ? 1 : 0;
 				warningMsgCount += (rowMessage.type === CONDITION_MESSAGE_TYPE.WARNING) ? 1 : 0;
 			}
@@ -326,7 +327,8 @@ export default class PropertiesStore {
 							validation_id: colMessage.validation_id,
 							type: colMessage.type,
 							text: colMessage.text,
-							required: colMessage.required };
+							required: colMessage.required,
+							displayError: colMessage.displayError };
 						errorMsgCount += (colMessage.type === CONDITION_MESSAGE_TYPE.ERROR) ? 1 : 0;
 						warningMsgCount += (colMessage.type === CONDITION_MESSAGE_TYPE.WARNING) ? 1 : 0;
 					}
