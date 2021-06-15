@@ -1304,7 +1304,7 @@ export default class PropertiesController {
 				return null;
 			}
 		}
-		const message = this.propertiesStore.getErrorMessage(propertyId, this.reactIntl, filterDisplayError);
+		const message = this.propertiesStore.getErrorMessage(propertyId, this.reactIntl);
 		if (filterSuccess) {
 			if (message && message.type === CONDITION_MESSAGE_TYPE.SUCCESS) {
 				return null;
@@ -1312,7 +1312,7 @@ export default class PropertiesController {
 		}
 
 		if (filterDisplayError) {
-			if (message && !isEmpty(message.displayError) && !message.displayError) { // This is only set if false
+			if (message && !message.displayError) {
 				return null;
 			}
 		}
@@ -1330,7 +1330,7 @@ export default class PropertiesController {
 	*/
 	getErrorMessages(filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError = true) {
 		let messages = this.propertiesStore.getErrorMessages();
-		if (filteredPipeline || filterHiddenDisable) {
+		if (filteredPipeline || filterHiddenDisable || filterDisplayError) {
 			messages = this._filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError);
 		}
 		return messages;

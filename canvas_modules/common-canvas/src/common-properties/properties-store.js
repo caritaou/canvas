@@ -244,9 +244,8 @@ export default class PropertiesStore {
 	/*
 	* Returns the message for a propertyId.  Iterates over row and cell level messages
 	* and returns an error message summary for all cell level errors.
-	* @param filterDisplayError If true, leave out messages that are not displayed in the UI
 	*/
-	getErrorMessage(propertyId, intl, filterDisplayError = true) {
+	getErrorMessage(propertyId, intl) {
 		if (typeof propertyId === "undefined") {
 			return null;
 		}
@@ -262,20 +261,22 @@ export default class PropertiesStore {
 					validation_id: controlMsg.validation_id,
 					type: controlMsg.type,
 					text: controlMsg.text,
-					required: controlMsg.required }; // return row message
+					required: controlMsg.required,
+					displayError: controlMsg.displayError }; // return row message
 			}
 		}
 		let controlMessage = null;
 		let returnMessage = null;
-		if (filterDisplayError && controlMsg && !isUndefined(controlMsg.displayError) && !controlMsg.displayError) {
-			return null;
-		}
+		// if (filterDisplayError && controlMsg && !isUndefined(controlMsg.displayError) && !controlMsg.displayError) {
+		// 	return null;
+		// }
 		if (controlMsg && controlMsg.text) { // save the control level message
 			controlMessage = {
 				validation_id: controlMsg.validation_id,
 				type: controlMsg.type,
 				text: controlMsg.text,
-				required: controlMsg.required }; // return prop message
+				required: controlMsg.required,
+				displayError: controlMsg.displayError }; // return prop message
 		}
 		if (controlMsg) {
 			returnMessage = this._getTableCellErrors(controlMsg, intl);
@@ -358,12 +359,14 @@ export default class PropertiesStore {
 		}
 	}
 	updateErrorMessage(propertyId, value) {
-		if (!isEqual(this.getErrorMessage(propertyId, false, false, false), value)) {
+		// TODO: this fixes dm-condition-operators-test.js
+		// this.store.dispatch(updateErrorMessage({ propertyId: propertyId, value: value }));
+		if (!isEqual(this.getErrorMessage(propertyId), value)) {
 			this.store.dispatch(updateErrorMessage({ propertyId: propertyId, value: value }));
 		}
 	}
 	clearErrorMessage(propertyId) {
-		if (this.getErrorMessage(propertyId, false, false, false) !== null) {
+		if (this.getErrorMessage(propertyId) !== null) {
 			this.store.dispatch(clearErrorMessage({ propertyId: propertyId }));
 		}
 	}

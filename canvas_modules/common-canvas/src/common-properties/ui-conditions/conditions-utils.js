@@ -667,9 +667,10 @@ function _validateInput(propertyId, controller, control, showErrors) {
 
 				// Determine if this condition is for required parameters
 				errorMessage.required = requiredDefinitionsIds.indexOf(validation.definition.validation.id) > -1;
-				if (!showErrors) {
-					errorMessage.displayError = false;
-				}
+				errorMessage.displayError = showErrors;
+				// if (!showErrors) {
+				// 	errorMessage.displayError = false;
+				// }
 
 				// if error message has not been set for this msgPropertyId/focus_parameter_ref, clear errorSet
 				if (!controller.getErrorMessage(msgPropertyId, true, true, false)) {
