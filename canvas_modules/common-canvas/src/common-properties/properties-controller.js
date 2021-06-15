@@ -28,7 +28,7 @@ import { STATES, ACTIONS, CONDITION_TYPE, PANEL_TREE_ROOT, CONDITION_MESSAGE_TYP
 import CommandStack from "../command-stack/command-stack.js";
 import ControlFactory from "./controls/control-factory";
 import { Type, ParamRole } from "./constants/form-constants";
-import { has, cloneDeep, assign, isEmpty, isEqual } from "lodash";
+import { has, cloneDeep, assign, isEmpty, isEqual, isUndefined } from "lodash";
 
 import { getConditionOps } from "./ui-conditions/condition-ops/condition-ops";
 
@@ -1312,7 +1312,7 @@ export default class PropertiesController {
 		}
 
 		if (filterDisplayError) {
-			if (message && !message.displayError) {
+			if (message && !isUndefined(message.displayError) && !message.displayError) { // This is only set if false
 				return null;
 			}
 		}
