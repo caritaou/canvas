@@ -667,7 +667,6 @@ function _validateInput(propertyId, controller, control, showErrors) {
 
 				// Determine if this condition is for required parameters
 				errorMessage.required = requiredDefinitionsIds.indexOf(validation.definition.validation.id) > -1;
-				// errorMessage.displayError = showErrors;
 				if (!showErrors) {
 					errorMessage.displayError = false;
 				}

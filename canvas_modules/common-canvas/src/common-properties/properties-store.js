@@ -257,12 +257,7 @@ export default class PropertiesStore {
 				return controlMsg[propertyId.col.toString()]; // return cell message
 			}
 			if (controlMsg && controlMsg.text) {
-				return {
-					validation_id: controlMsg.validation_id,
-					type: controlMsg.type,
-					text: controlMsg.text,
-					required: controlMsg.required,
-					displayError: controlMsg.displayError }; // return row message
+				return controlMsg;
 			}
 		}
 		let controlMessage = null;
@@ -271,12 +266,7 @@ export default class PropertiesStore {
 		// 	return null;
 		// }
 		if (controlMsg && controlMsg.text) { // save the control level message
-			controlMessage = {
-				validation_id: controlMsg.validation_id,
-				type: controlMsg.type,
-				text: controlMsg.text,
-				required: controlMsg.required,
-				displayError: controlMsg.displayError }; // return prop message
+			controlMessage = controlMsg;
 		}
 		if (controlMsg) {
 			returnMessage = this._getTableCellErrors(controlMsg, intl);
@@ -304,12 +294,7 @@ export default class PropertiesStore {
 			}
 			const rowMessage = controlMsg[rowKey];
 			if (rowMessage && rowMessage.text) {
-				returnMessage = {
-					validation_id: rowMessage.validation_id,
-					type: rowMessage.type,
-					text: rowMessage.text,
-					required: rowMessage.required,
-					displayError: rowMessage.displayError };
+				returnMessage = rowMessage;
 				errorMsgCount += (rowMessage.type === CONDITION_MESSAGE_TYPE.ERROR) ? 1 : 0;
 				warningMsgCount += (rowMessage.type === CONDITION_MESSAGE_TYPE.WARNING) ? 1 : 0;
 			}
@@ -323,12 +308,7 @@ export default class PropertiesStore {
 					}
 					const colMessage = rowMessage[colKey];
 					if (colMessage && colMessage.text) {
-						returnMessage = {
-							validation_id: colMessage.validation_id,
-							type: colMessage.type,
-							text: colMessage.text,
-							required: colMessage.required,
-							displayError: colMessage.displayError };
+						returnMessage = colMessage;
 						errorMsgCount += (colMessage.type === CONDITION_MESSAGE_TYPE.ERROR) ? 1 : 0;
 						warningMsgCount += (colMessage.type === CONDITION_MESSAGE_TYPE.WARNING) ? 1 : 0;
 					}
