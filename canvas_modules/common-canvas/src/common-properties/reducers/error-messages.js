@@ -41,11 +41,14 @@ function messages(state = {}, action) {
 					newState[propertyId.name][strRow][strCol] = {};
 				}
 				newState[propertyId.name][strRow][strCol] = action.message.value;
+				// delete newState[propertyId.name][strRow][strCol].displayError;
 			} else {
-				newState[propertyId.name][strRow] = Object.assign(newState[propertyId.name][strRow], action.message.value);
+				newState[propertyId.name][strRow] = Object.assign({}, action.message.value);
+				// delete newState[propertyId.name][strRow].displayError;
 			}
 		} else {
-			newState[propertyId.name] = Object.assign(newState[propertyId.name], action.message.value);
+			newState[propertyId.name] = Object.assign({}, action.message.value);
+			// delete newState[propertyId.name].displayError;
 		}
 		return Object.assign({}, state, newState);
 	}
@@ -62,6 +65,8 @@ function messages(state = {}, action) {
 				delete newState[action.message.propertyId.name].type;
 				delete newState[action.message.propertyId.name].text;
 				delete newState[action.message.propertyId.name].validation_id;
+				delete newState[action.message.propertyId.name].required;
+				delete newState[action.message.propertyId.name].displayError;
 				if (isEmpty(newState[action.message.propertyId.name])) {
 					delete newState[action.message.propertyId.name];
 				}

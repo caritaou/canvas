@@ -15,7 +15,7 @@
  */
 
 import { createStore, combineReducers } from "redux";
-import { has, isEqual } from "lodash";
+import { has, isEqual, isUndefined } from "lodash";
 
 import { setPropertyValues, updatePropertyValue, removePropertyValue } from "./actions";
 import { setControlStates, updateControlState } from "./actions";
@@ -25,7 +25,7 @@ import { setActionStates, updateActionState } from "./actions";
 import { clearSelectedRows, updateSelectedRows, disableRowMoveButtons } from "./actions";
 
 import { setErrorMessages, updateErrorMessage, clearErrorMessage } from "./actions";
-import { setDatasetMetadata } from "./actions";
+import { setDatasetMetadata, setSaveButtonDisable } from "./actions";
 import { setTitle, setActiveTab } from "./actions";
 import propertiesReducer from "./reducers/properties";
 import controlStatesReducer from "./reducers/control-states";
@@ -36,6 +36,7 @@ import datasetMetadataReducer from "./reducers/dataset-metadata";
 import rowSelectionsReducer from "./reducers/row-selections";
 import componentMetadataReducer from "./reducers/component-metadata";
 import disableRowMoveButtonsReducer from "./reducers/disable-row-move-buttons";
+import saveButtonDisableReducer from "./reducers/save-button-disable";
 import * as PropertyUtils from "./util/property-utils.js";
 import { CONDITION_MESSAGE_TYPE, MESSAGE_KEYS } from "./constants/constants.js";
 
@@ -44,7 +45,8 @@ import { CONDITION_MESSAGE_TYPE, MESSAGE_KEYS } from "./constants/constants.js";
 export default class PropertiesStore {
 	constructor() {
 		this.combinedReducer = combineReducers({ propertiesReducer, controlStatesReducer, panelStatesReducer,
-			errorMessagesReducer, datasetMetadataReducer, rowSelectionsReducer, componentMetadataReducer, disableRowMoveButtonsReducer, actionStatesReducer });
+			errorMessagesReducer, datasetMetadataReducer, rowSelectionsReducer, componentMetadataReducer,
+			disableRowMoveButtonsReducer, actionStatesReducer, saveButtonDisableReducer });
 		let enableDevTools = false;
 		if (typeof window !== "undefined") {
 			enableDevTools = window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__();
@@ -206,6 +208,14 @@ export default class PropertiesStore {
 		this.store.dispatch(updateActionState({ actionId: actionId, value: value }));
 	}
 
+	setSaveButtonDisable(disableState) {
+		this.store.dispatch(setSaveButtonDisable(disableState));
+	}
+
+	getSaveButtonDisable() {
+		const state = this.store.getState();
+		return state.saveButtonDisableReducer.disable;
+	}
 
 	/*
 	* Retrieves filtered enumeration values for the given propertyId.
@@ -234,8 +244,9 @@ export default class PropertiesStore {
 	/*
 	* Returns the message for a propertyId.  Iterates over row and cell level messages
 	* and returns an error message summary for all cell level errors.
+	* @param filterDisplayError If true, leave out messages that are not displayed in the UI
 	*/
-	getErrorMessage(propertyId, intl) {
+	getErrorMessage(propertyId, intl, filterDisplayError = true) {
 		if (typeof propertyId === "undefined") {
 			return null;
 		}
@@ -247,13 +258,24 @@ export default class PropertiesStore {
 				return controlMsg[propertyId.col.toString()]; // return cell message
 			}
 			if (controlMsg && controlMsg.text) {
-				return { validation_id: controlMsg.validation_id, type: controlMsg.type, text: controlMsg.text }; // return row message
+				return {
+					validation_id: controlMsg.validation_id,
+					type: controlMsg.type,
+					text: controlMsg.text,
+					required: controlMsg.required }; // return row message
 			}
 		}
 		let controlMessage = null;
 		let returnMessage = null;
+		if (filterDisplayError && controlMsg && !isUndefined(controlMsg.displayError) && !controlMsg.displayError) {
+			return null;
+		}
 		if (controlMsg && controlMsg.text) { // save the control level message
-			controlMessage = { validation_id: controlMsg.validation_id, type: controlMsg.type, text: controlMsg.text }; // return prop message
+			controlMessage = {
+				validation_id: controlMsg.validation_id,
+				type: controlMsg.type,
+				text: controlMsg.text,
+				required: controlMsg.required }; // return prop message
 		}
 		if (controlMsg) {
 			returnMessage = this._getTableCellErrors(controlMsg, intl);
@@ -281,7 +303,11 @@ export default class PropertiesStore {
 			}
 			const rowMessage = controlMsg[rowKey];
 			if (rowMessage && rowMessage.text) {
-				returnMessage = { validation_id: rowMessage.validation_id, type: rowMessage.type, text: rowMessage.text };
+				returnMessage = {
+					validation_id: rowMessage.validation_id,
+					type: rowMessage.type,
+					text: rowMessage.text,
+					required: rowMessage.required };
 				errorMsgCount += (rowMessage.type === CONDITION_MESSAGE_TYPE.ERROR) ? 1 : 0;
 				warningMsgCount += (rowMessage.type === CONDITION_MESSAGE_TYPE.WARNING) ? 1 : 0;
 			}
@@ -295,7 +321,11 @@ export default class PropertiesStore {
 					}
 					const colMessage = rowMessage[colKey];
 					if (colMessage && colMessage.text) {
-						returnMessage = { validation_id: colMessage.validation_id, type: colMessage.type, text: colMessage.text };
+						returnMessage = {
+							validation_id: colMessage.validation_id,
+							type: colMessage.type,
+							text: colMessage.text,
+							required: colMessage.required };
 						errorMsgCount += (colMessage.type === CONDITION_MESSAGE_TYPE.ERROR) ? 1 : 0;
 						warningMsgCount += (colMessage.type === CONDITION_MESSAGE_TYPE.WARNING) ? 1 : 0;
 					}
@@ -318,6 +348,7 @@ export default class PropertiesStore {
 
 	getErrorMessages() {
 		const state = this.store.getState();
+		// TODO: filter out the displayError=false - no, this will be filtered in controller
 		return PropertyUtils.copy(state.errorMessagesReducer);
 	}
 	setErrorMessages(values) {
@@ -327,12 +358,12 @@ export default class PropertiesStore {
 		}
 	}
 	updateErrorMessage(propertyId, value) {
-		if (!isEqual(this.getErrorMessage(propertyId), value)) {
+		if (!isEqual(this.getErrorMessage(propertyId, false, false, false), value)) {
 			this.store.dispatch(updateErrorMessage({ propertyId: propertyId, value: value }));
 		}
 	}
 	clearErrorMessage(propertyId) {
-		if (this.getErrorMessage(propertyId) !== null) {
+		if (this.getErrorMessage(propertyId, false, false, false) !== null) {
 			this.store.dispatch(clearErrorMessage({ propertyId: propertyId }));
 		}
 	}

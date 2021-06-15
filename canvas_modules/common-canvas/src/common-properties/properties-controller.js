@@ -46,6 +46,7 @@ export default class PropertiesController {
 		this.visibleDefinitions = {};
 		this.enabledDefinitions = {};
 		this.validationDefinitions = {};
+		this.requiredDefinitionsIds = [];
 		this.filterDefinitions = {};
 		this.filteredEnumDefinitions = {};
 		this.allowChangeDefinitions = {};
@@ -142,7 +143,7 @@ export default class PropertiesController {
 			this.saveControls(controls); // saves controls without the subcontrols
 			this._parseSummaryControls(controls);
 			this.parsePanelTree();
-			conditionsUtil.injectDefaultValidations(this.controls, this.validationDefinitions, intl);
+			conditionsUtil.injectDefaultValidations(this.controls, this.validationDefinitions, this.requiredDefinitionsIds, intl);
 			let datasetMetadata;
 			let propertyValues = {};
 			if (this.form.data) {
@@ -161,6 +162,9 @@ export default class PropertiesController {
 			// we need to do it here because the parameter that is referenced in the parameterRef may need to have a
 			// default value set in the above loop.
 			this._addToControlValues(true);
+
+			// TODO: run conditions and set metadata if required or not, and to not show errors
+
 			this.uiItems = this.form.uiItems; // set last so properties dialog doesn't render too early
 			// set initial tab to first tab
 			if (!isEmpty(this.uiItems) && !isEmpty(this.uiItems[0].tabs)) {
@@ -261,6 +265,10 @@ export default class PropertiesController {
 			}
 		}
 		return retCond;
+	}
+
+	getRequiredDefinitionIds() {
+		return this.requiredDefinitionsIds;
 	}
 
 	/*
@@ -741,17 +749,20 @@ export default class PropertiesController {
 	* This public API will validate a single property input value.
 	*
 	* @param {object} propertyId. required.
+	* @param {boolean} showErrors. optional. Set to false to run conditions without displaying errors in the UI
+	*    Defaults to true to always display errors
 	*/
-	validateInput(propertyId) {
-		conditionsUtil.validateInput(propertyId, this, this.validationDefinitions);
+	validateInput(propertyId, showErrors = true) {
+		conditionsUtil.validateInput(propertyId, this, showErrors);
 	}
 
 	/**
 	* This public API will validate all properties input values.
-	*
+	* @param {boolean} showErrors. optional. Set to false to run conditions without displaying errors in the UI
+	*    Defaults to true to always display errors
 	*/
-	validatePropertiesValues() {
-		conditionsUtil.validatePropertiesValues(this);
+	validatePropertiesValues(showErrors = true) {
+		conditionsUtil.validatePropertiesValues(this, showErrors);
 	}
 
 	//
@@ -997,8 +1008,14 @@ export default class PropertiesController {
 		}
 		conditionsUtil.validateConditions(inPropertyId, this);
 		if (!skipValidateInput) {
-			conditionsUtil.validateInput(inPropertyId, this);
+			conditionsUtil.validateInput(inPropertyId, this, true);
 		}
+
+		// If there are any required parameters empty, disable save button.
+		// If all required properties are filled, enable save button.
+		// this.requiredDefinitionsIds;
+		// const errors = this.getErrorMessages();
+		// console.log("!!! errors " + Object.keys(errors));
 
 		if (this.handlers.propertyListener) {
 			const convertedValue = this._convertObjectStructure(propertyId, value);
@@ -1275,9 +1292,10 @@ export default class PropertiesController {
 	* @param inPropertyId Target propertyId
 	* @param filterHiddenDisable True to leave out hidden and disabled properties
 	* @param filterSuccess If true, leave out success messages
+	* @param filterDisplayError If true, leave out messages that are not displayed in the UI
 	* @return error message object
 	*/
-	getErrorMessage(inPropertyId, filterHiddenDisable, filterSuccess) {
+	getErrorMessage(inPropertyId, filterHiddenDisable = false, filterSuccess = false, filterDisplayError = true) {
 		const propertyId = this.convertPropertyId(inPropertyId);
 		// don't return hidden message
 		if (filterHiddenDisable) {
@@ -1286,9 +1304,15 @@ export default class PropertiesController {
 				return null;
 			}
 		}
-		const message = this.propertiesStore.getErrorMessage(propertyId, this.reactIntl);
+		const message = this.propertiesStore.getErrorMessage(propertyId, this.reactIntl, filterDisplayError);
 		if (filterSuccess) {
 			if (message && message.type === CONDITION_MESSAGE_TYPE.SUCCESS) {
+				return null;
+			}
+		}
+
+		if (filterDisplayError) {
+			if (message && !isEmpty(message.displayError) && !message.displayError) { // This is only set if false
 				return null;
 			}
 		}
@@ -1299,24 +1323,39 @@ export default class PropertiesController {
 	*	Used to return all error messages.  Will either return internally stored messages
 	* or formatted list to store in pipeline-flow
 	* @param filteredPipeline boolean
+	* @param filterHiddenDisable True to leave out hidden and disabled properties
+	* @param filterSuccess If true, leave out success messages
+	* @param filterDisplayError If true, leave out messages that are not displayed in the UI
 	* @return object when filteredPipeline=false or array when filteredPipeline=true
 	*/
-	getErrorMessages(filteredPipeline, filterHiddenDisable, filterSuccess) {
+	getErrorMessages(filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError = true) {
 		let messages = this.propertiesStore.getErrorMessages();
 		if (filteredPipeline || filterHiddenDisable) {
-			messages = this._filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess);
+			messages = this._filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError);
 		}
 		return messages;
 	}
 
-	_filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess) {
+	getRequiredErrorMessages() {
+		const messages = this.propertiesStore.getErrorMessages();
+		const requiredMessages = {};
+		Object.keys(messages).forEach((parameterId) => {
+			const message = messages[parameterId];
+			if (message.required) {
+				requiredMessages[parameterId] = message;
+			}
+		});
+		return requiredMessages;
+	}
+
+	_filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError) {
 		const filteredMessages = {};
 		const pipelineMessages = [];
 		for (const paramKey in messages) {
 			if (!has(messages, paramKey)) {
 				continue;
 			}
-			const paramMessage = this.getErrorMessage({ name: paramKey }, filterHiddenDisable, filterSuccess);
+			const paramMessage = this.getErrorMessage({ name: paramKey }, filterHiddenDisable, filterSuccess, filterDisplayError);
 			if (paramMessage && paramMessage.text) {
 				if (filteredPipeline) {
 					pipelineMessages.push({
@@ -1442,6 +1481,14 @@ export default class PropertiesController {
 
 	getControls() {
 		return this.controls;
+	}
+
+	setSaveButtonDisable(saveDisable) {
+		this.propertiesStore.setSaveButtonDisable(saveDisable);
+	}
+
+	getSaveButtonDisable() {
+		return this.propertiesStore.getSaveButtonDisable();
 	}
 
 	isRequired(propertyId) {
