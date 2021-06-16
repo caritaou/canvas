@@ -15,7 +15,7 @@
  */
 
 import { createStore, combineReducers } from "redux";
-import { has, isEqual, isUndefined } from "lodash";
+import { has, isEqual, cloneDeep } from "lodash";
 
 import { setPropertyValues, updatePropertyValue, removePropertyValue } from "./actions";
 import { setControlStates, updateControlState } from "./actions";
@@ -262,14 +262,12 @@ export default class PropertiesStore {
 		}
 		let controlMessage = null;
 		let returnMessage = null;
-		// if (filterDisplayError && controlMsg && !isUndefined(controlMsg.displayError) && !controlMsg.displayError) {
-		// 	return null;
-		// }
 		if (controlMsg && controlMsg.text) { // save the control level message
 			controlMessage = controlMsg;
 		}
 		if (controlMsg) {
-			returnMessage = this._getTableCellErrors(controlMsg, intl);
+			const clonedControlMsg = cloneDeep(controlMsg); // Prevent modifying state directly
+			returnMessage = this._getTableCellErrors(clonedControlMsg, intl);
 		}
 		if (controlMessage !== null && returnMessage !== null) {
 			controlMessage.text = controlMessage.text + " " + returnMessage.text;
@@ -331,7 +329,6 @@ export default class PropertiesStore {
 
 	getErrorMessages() {
 		const state = this.store.getState();
-		// TODO: filter out the displayError=false - no, this will be filtered in controller
 		return PropertyUtils.copy(state.errorMessagesReducer);
 	}
 	setErrorMessages(values) {
@@ -341,8 +338,6 @@ export default class PropertiesStore {
 		}
 	}
 	updateErrorMessage(propertyId, value) {
-		// TODO: this fixes dm-condition-operators-test.js
-		// this.store.dispatch(updateErrorMessage({ propertyId: propertyId, value: value }));
 		if (!isEqual(this.getErrorMessage(propertyId), value)) {
 			this.store.dispatch(updateErrorMessage({ propertyId: propertyId, value: value }));
 		}
