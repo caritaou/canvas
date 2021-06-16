@@ -1330,8 +1330,12 @@ export default class PropertiesController {
 	*/
 	getErrorMessages(filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError = true) {
 		let messages = this.propertiesStore.getErrorMessages();
-		if (filteredPipeline || filterHiddenDisable || filterDisplayError) {
-			messages = this._filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError);
+
+		if (filterDisplayError) {
+			messages = this._filterDisplayError(messages);
+		}
+		if (filteredPipeline || filterHiddenDisable) {
+			messages = this._filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess);
 		}
 		return messages;
 	}
@@ -1348,7 +1352,7 @@ export default class PropertiesController {
 		return requiredMessages;
 	}
 
-	_filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess, filterDisplayError) {
+	_filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess) {
 		const filteredMessages = {};
 		const pipelineMessages = [];
 		for (const paramKey in messages) {
@@ -1356,8 +1360,8 @@ export default class PropertiesController {
 				continue;
 			}
 
-			// TODO this does not work for table cell conditions. The propertyId is missing col and row
-			const paramMessage = this.getErrorMessage({ name: paramKey }, filterHiddenDisable, filterSuccess, filterDisplayError);
+			// This does not work for table cell conditions. The propertyId is missing col and row
+			const paramMessage = this.getErrorMessage({ name: paramKey }, filterHiddenDisable, filterSuccess);
 			if (paramMessage && paramMessage.text) {
 				if (filteredPipeline) {
 					pipelineMessages.push({
@@ -1374,6 +1378,48 @@ export default class PropertiesController {
 		if (filteredPipeline) {
 			return pipelineMessages;
 		}
+		return filteredMessages;
+	}
+
+	// Remove error messages that will not be displayed in the UI
+	_filterDisplayError(messages) {
+		const filteredMessages = {};
+		const parameterNames = Object.keys(messages);
+		parameterNames.forEach((paramKey) => {
+			const parameterError = messages[paramKey];
+			if (parameterError.text && (isUndefined(parameterError.displayError) || parameterError.displayError)) { // not table
+				filteredMessages[paramKey] = parameterError;
+			} else { // table cell
+				for (const rowKey in parameterError) {
+					if (!has(parameterError, rowKey)) {
+						continue;
+					}
+					const rowMessage = parameterError[rowKey];
+					if (rowMessage && rowMessage.text && (isUndefined(rowMessage.displayError) || rowMessage.displayError)) {
+						if (typeof filteredMessages[paramKey] === "undefined") {
+							filteredMessages[paramKey] = {};
+						}
+						filteredMessages[paramKey][rowKey] = rowMessage;
+					} else {
+						for (const colKey in rowMessage) {
+							if (!has(rowMessage, colKey)) {
+								continue;
+							}
+							const colMessage = rowMessage[colKey];
+							if (colMessage && colMessage.text && (isUndefined(colMessage.displayError) || colMessage.displayError)) {
+								if (typeof filteredMessages[paramKey] === "undefined") {
+									filteredMessages[paramKey] = {};
+								}
+								if (typeof filteredMessages[paramKey][rowKey] === "undefined") {
+									filteredMessages[paramKey][rowKey] = {};
+								}
+								filteredMessages[paramKey][rowKey][colKey] = colMessage;
+							}
+						}
+					}
+				}
+			}
+		});
 		return filteredMessages;
 	}
 

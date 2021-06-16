@@ -23,17 +23,10 @@ import PropertiesButtons from "../properties-buttons";
 class MainEditorPropertiesButtons extends Component {
 
 	shouldEnabledSaveButton() {
-		console.log("!!! this.props.saveButtonEnabled " + this.props.saveButtonEnabled);
 		if (this.props.saveButtonEnabled) {
-			console.log("!!! this.props.disableSaveIfRequiredPropertiesEmpty " + this.props.disableSaveIfRequiredPropertiesEmpty);
 			if (this.props.disableSaveIfRequiredPropertiesEmpty) {
-				// check required fields
-				console.log("!!! this.props.requiredErrorMessages " + Object.keys(this.props.requiredErrorMessages));
+				// Return false if any required fields are not filled in
 				return Object.keys(this.props.requiredErrorMessages).length === 0;
-				// if required empty
-				// return false
-				// if all filled in
-				// return true
 			}
 			return true;
 		}

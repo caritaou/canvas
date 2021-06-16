@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2020 Elyra Authors
+ * Copyright 2017-2021 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,11 +43,9 @@ function messages(state = {}, action) {
 				newState[propertyId.name][strRow][strCol] = action.message.value;
 			} else {
 				newState[propertyId.name][strRow] = Object.assign({}, action.message.value);
-				// delete newState[propertyId.name][strRow].displayError;
 			}
 		} else {
 			newState[propertyId.name] = Object.assign({}, action.message.value);
-			// delete newState[propertyId.name].displayError;
 		}
 		return Object.assign({}, state, newState);
 	}
