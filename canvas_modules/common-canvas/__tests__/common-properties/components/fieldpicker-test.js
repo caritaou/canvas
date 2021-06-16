@@ -733,7 +733,7 @@ describe("field-picker-control with on selectcolumns renders correctly", () => {
 			}
 		};
 
-		const actual = renderedController.getErrorMessages();
+		const actual = renderedController.getErrorMessages(false, false, false, false);
 		expect(warningMessage).to.eql(actual);
 	});
 

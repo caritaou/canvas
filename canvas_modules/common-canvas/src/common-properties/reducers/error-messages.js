@@ -41,7 +41,6 @@ function messages(state = {}, action) {
 					newState[propertyId.name][strRow][strCol] = {};
 				}
 				newState[propertyId.name][strRow][strCol] = action.message.value;
-				// delete newState[propertyId.name][strRow][strCol].displayError;
 			} else {
 				newState[propertyId.name][strRow] = Object.assign({}, action.message.value);
 				// delete newState[propertyId.name][strRow].displayError;

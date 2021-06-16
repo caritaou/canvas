@@ -1355,6 +1355,8 @@ export default class PropertiesController {
 			if (!has(messages, paramKey)) {
 				continue;
 			}
+
+			// TODO this does not work for table cell conditions. The propertyId is missing col and row
 			const paramMessage = this.getErrorMessage({ name: paramKey }, filterHiddenDisable, filterSuccess, filterDisplayError);
 			if (paramMessage && paramMessage.text) {
 				if (filteredPipeline) {
