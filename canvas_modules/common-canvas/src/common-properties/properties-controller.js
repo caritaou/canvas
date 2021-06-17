@@ -162,9 +162,6 @@ export default class PropertiesController {
 			// we need to do it here because the parameter that is referenced in the parameterRef may need to have a
 			// default value set in the above loop.
 			this._addToControlValues(true);
-
-			// TODO: run conditions and set metadata if required or not, and to not show errors
-
 			this.uiItems = this.form.uiItems; // set last so properties dialog doesn't render too early
 			// set initial tab to first tab
 			if (!isEmpty(this.uiItems) && !isEmpty(this.uiItems[0].tabs)) {

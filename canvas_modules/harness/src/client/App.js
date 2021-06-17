@@ -212,7 +212,7 @@ class App extends React.Component {
 			selectedPanel: null,
 			propertiesContainerType: PROPERTIES_FLYOUT,
 			displayAdditionalComponents: false,
-			applyOnBlur: true,
+			applyOnBlur: false,
 			disableSaveIfRequiredPropertiesEmpty: true,
 			expressionBuilder: true,
 			heading: false,
@@ -2067,7 +2067,7 @@ class App extends React.Component {
 		const propertiesConfig = {
 			containerType: this.state.propertiesContainerType === PROPERTIES_FLYOUT ? CUSTOM : this.state.propertiesContainerType,
 			rightFlyout: this.state.propertiesContainerType === PROPERTIES_FLYOUT,
-			applyOnBlur: false, // this.state.applyOnBlur,
+			applyOnBlur: this.state.applyOnBlur,
 			disableSaveIfRequiredPropertiesEmpty: this.state.disableSaveIfRequiredPropertiesEmpty,
 			heading: this.state.heading,
 			schemaValidation: this.state.propertiesSchemaValidation,
