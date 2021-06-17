@@ -1329,7 +1329,7 @@ export default class PropertiesController {
 		let messages = this.propertiesStore.getErrorMessages();
 
 		if (filterDisplayError) {
-			messages = this._filterDisplayError(messages);
+			messages = this._filterDisplayErrors(messages);
 		}
 		if (filteredPipeline || filterHiddenDisable) {
 			messages = this._filterMessages(messages, filteredPipeline, filterHiddenDisable, filterSuccess);
@@ -1339,13 +1339,7 @@ export default class PropertiesController {
 
 	getRequiredErrorMessages() {
 		const messages = this.propertiesStore.getErrorMessages();
-		const requiredMessages = {};
-		Object.keys(messages).forEach((parameterId) => {
-			const message = messages[parameterId];
-			if (message.required) {
-				requiredMessages[parameterId] = message;
-			}
-		});
+		const requiredMessages = this._filterNonRequiredErrors(messages);
 		return requiredMessages;
 	}
 
@@ -1379,12 +1373,26 @@ export default class PropertiesController {
 	}
 
 	// Remove error messages that will not be displayed in the UI
-	_filterDisplayError(messages) {
+	_filterDisplayErrors(messages) {
+		const filterCondition = (testMessage) => (isUndefined(testMessage.displayError) || testMessage.displayError);
+		const filteredMessages = this._filterErrors(messages, filterCondition);
+		return filteredMessages;
+	}
+
+	// Remove error messages that are not from a required parameters
+	_filterNonRequiredErrors(messages) {
+		const filterCondition = (testMessage) => testMessage.required === true;
+		const filteredMessages = this._filterErrors(messages, filterCondition);
+		return filteredMessages;
+	}
+
+	// Remove error messages that do not satisfy the given condition
+	_filterErrors(messages, condition) {
 		const filteredMessages = {};
 		const parameterNames = Object.keys(messages);
 		parameterNames.forEach((paramKey) => {
 			const parameterError = messages[paramKey];
-			if (parameterError.text && (isUndefined(parameterError.displayError) || parameterError.displayError)) { // not table
+			if (parameterError.text && condition(parameterError)) { // not table
 				filteredMessages[paramKey] = parameterError;
 			} else { // table cell
 				for (const rowKey in parameterError) {
@@ -1392,7 +1400,7 @@ export default class PropertiesController {
 						continue;
 					}
 					const rowMessage = parameterError[rowKey];
-					if (rowMessage && rowMessage.text && (isUndefined(rowMessage.displayError) || rowMessage.displayError)) {
+					if (rowMessage && rowMessage.text && condition(rowMessage)) {
 						if (typeof filteredMessages[paramKey] === "undefined") {
 							filteredMessages[paramKey] = {};
 						}
@@ -1403,7 +1411,7 @@ export default class PropertiesController {
 								continue;
 							}
 							const colMessage = rowMessage[colKey];
-							if (colMessage && colMessage.text && (isUndefined(colMessage.displayError) || colMessage.displayError)) {
+							if (colMessage && colMessage.text && condition(colMessage)) {
 								if (typeof filteredMessages[paramKey] === "undefined") {
 									filteredMessages[paramKey] = {};
 								}
