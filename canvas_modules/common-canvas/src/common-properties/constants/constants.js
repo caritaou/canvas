@@ -127,6 +127,7 @@ export const MESSAGE_KEYS = {
 	TABLE_TOOLBAR_BUTTON_DELETE: "table.toolbar.button.delete",
 	TABLE_TOOLBAR_BUTTON_EDIT: "table.toolbar.button.edit",
 	TABLE_TOOLBAR_BUTTON_CANCEL: "table.toolbar.button.cancel",
+	TABLE_DELETEICON_TOOLTIP: "table.deleteIcon.tooltip"
 
 };
 
@@ -219,7 +220,7 @@ export const ONE_REM_HEIGHT = 16;
 export const REM_ROW_HEIGHT = 2; // in rem
 export const REM_HEADER_HEIGHT = 2; // in rem
 
-export const EXPRESSION_TABLE_ROWS = 7;
+export const EXPRESSION_TABLE_ROWS = 5; // Adjust as per Tearsheet
 
 export const TABLE_SUBPANEL_BUTTON_WIDTH = "36px";
 

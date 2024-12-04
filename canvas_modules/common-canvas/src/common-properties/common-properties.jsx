@@ -43,6 +43,7 @@ class CommonProperties extends React.Component {
 	}
 
 	componentDidCatch(error, info) {
+		console.error(error);
 		this.setState({
 			hasError: true,
 			error: error,
@@ -266,7 +267,8 @@ CommonProperties.propTypes = {
 		validationHandler: PropTypes.func,
 		titleChangeHandler: PropTypes.func,
 		propertiesActionLabelHandler: PropTypes.func,
-		tooltipLinkHandler: PropTypes.func
+		tooltipLinkHandler: PropTypes.func,
+		propertyIconHandler: PropTypes.func
 	}),
 	customPanels: PropTypes.array,
 	customControls: PropTypes.array,

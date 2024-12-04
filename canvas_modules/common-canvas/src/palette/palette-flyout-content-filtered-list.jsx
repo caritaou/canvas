@@ -49,11 +49,12 @@ class PaletteFlyoutContentFilteredList extends React.Component {
 			contentItems.push(
 				<div key={itemKey}>
 					<PaletteContentListItem
+						tabIndex={0}
 						nodeTypeInfo={this.props.nodeTypeInfos[idx]}
 						isDisplaySearchResult
 						isShowRanking={this.props.isShowRanking}
 						canvasController={this.props.canvasController}
-						isPaletteOpen={this.props.isPaletteOpen}
+						isPaletteWide={this.props.isPaletteWide}
 						isEditingEnabled={this.props.isEditingEnabled}
 					/>
 				</div>
@@ -86,7 +87,7 @@ PaletteFlyoutContentFilteredList.propTypes = {
 	intl: PropTypes.object.isRequired,
 	nodeTypeInfos: PropTypes.array.isRequired,
 	canvasController: PropTypes.object.isRequired,
-	isPaletteOpen: PropTypes.bool.isRequired,
+	isPaletteWide: PropTypes.bool.isRequired,
 	isEditingEnabled: PropTypes.bool.isRequired,
 	isNodeTypeInfosArrayTruncated: PropTypes.bool,
 	isShowRanking: PropTypes.bool

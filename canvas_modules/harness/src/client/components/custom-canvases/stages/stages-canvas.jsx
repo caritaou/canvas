@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 Elyra Authors
+ * Copyright 2017-2024 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,31 +13,39 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/* eslint no-alert: "off" */
 
 import React from "react";
 import PropTypes from "prop-types";
 
-import { CommonCanvas, CanvasController } from "common-canvas"; // eslint-disable-line import/no-unresolved
+import { CommonCanvas, CanvasController, Palette } from "common-canvas"; // eslint-disable-line import/no-unresolved
 
-import { Edit } from "@carbon/react/icons";
+import { Button } from "@carbon/react";
+import { Edit, OpenPanelFilledLeft, Search } from "@carbon/react/icons";
 
 import MultiCommandPanel from "./multi-command-panel";
+import AppDecoration from "./app-decoration.jsx";
 
-import StagesCanvasFlow from "./stagesCanvas.json";
+import StagesFlow from "./stages-flow.json";
 import StagesPalette from "../../../../../test_resources/palettes/stagesPalette.json";
 
-export default class DetachedCanvas extends React.Component {
+export default class StagesCanvas extends React.Component {
 	constructor(props) {
 		super(props);
+
+		this.state = {
+			leftFlyout: null,
+			showLeftFlyout: false
+		};
+
 		this.canvasController = new CanvasController();
-		this.canvasController.setPipelineFlow(StagesCanvasFlow);
+		this.canvasController.setPipelineFlow(StagesFlow);
 		this.canvasController.setPipelineFlowPalette(StagesPalette);
 
 		this.getConfig = this.getConfig.bind(this);
 		this.getToolbarConfig = this.getToolbarConfig.bind(this);
 		this.editActionHandler = this.editActionHandler.bind(this);
 		this.clickActionHandler = this.clickActionHandler.bind(this);
-		this.decorationActionHandler = this.decorationActionHandler.bind(this);
 		this.contextMenuHandler = this.contextMenuHandler.bind(this);
 
 		// Add decorations to the links
@@ -48,11 +56,28 @@ export default class DetachedCanvas extends React.Component {
 				return { linkId: link.id, pipelineId: pId, decorations: decs };
 			});
 		this.canvasController.setLinksMultiDecorations(pipelineLinkDecorations);
+
+		// Palette header object - used in a real application to open an asset browser.
+		this.paletteHeader = (
+			<div style={{ borderBottom: "1px solid lightgray", height: "fit-content", padding: "20px 18px 20px" }} >
+				<Button kind="tertiary" size="sm" onClick={() => window.alert("In a real application an Asset Browser would open now.")}>
+					Add asset to canvas +
+				</Button>
+			</div>
+		);
 	}
 
 	getToolbarConfig() {
+		// The code below can be used if flipping between the two palette icons with the arrow is needed
+		// const icon = this.state.showLeftFlyout ? (<SidePanelCloseFilled />) : (<SidePanelOpenFilled />);
+
+		const icon = (<OpenPanelFilledLeft />);
+
 		const toolbarConfig = {
 			leftBar: [
+				{ action: "left-flyout-palette", enable: true, iconEnabled: icon },
+				{ action: "left-flyout-search", enable: true, iconEnabled: (<Search size={32} />) },
+				{ divider: true },
 				{ action: "undo",
 					label: "Undo",
 					purpose: "dual",
@@ -85,7 +110,12 @@ export default class DetachedCanvas extends React.Component {
 		const config = Object.assign({}, this.props.config, {
 			enableParentClass: "stages",
 			enableNodeFormatType: "Vertical",
+			enablePaletteLayout: "None",
+			enableNarrowPalette: false,
+			enableLeftFlyoutUnderToolbar: true,
+			enableRightFlyoutUnderToolbar: true,
 			enableLinkType: "Straight",
+			enableLinkMethod: "Freeform",
 			enableLinkDirection: "LeftRight",
 			enableSaveZoom: "LocalStorage",
 			enableSnapToGridType: "After",
@@ -102,8 +132,7 @@ export default class DetachedCanvas extends React.Component {
 			enableMarkdownInComments: true,
 			enableContextToolbar: true,
 			enableResizableNodes: true,
-			enableNarrowPalette: false,
-			paletteInitialState: true,
+			enablePaletteHeader: this.paletteHeader,
 			tipConfig: {
 				palette: true,
 				nodes: true,
@@ -159,7 +188,14 @@ export default class DetachedCanvas extends React.Component {
 				linkEndHandleImage: "/images/custom-canvases/stages/decorations/dragStateArrow.svg",
 				linkEndHandleWidth: 20,
 				linkEndHandleHeight: 20,
-				linkHandleRaiseToTop: true
+				linkHandleRaiseToTop: true,
+				linkContextToolbarPosX: 0,
+				linkContextToolbarPosY: -15,
+				linkLengthForAltDecorations: 150,
+				linkAltDecorations: [
+					{ id: "alt-123", path: "M -25 -20 L -25 20 25 20 25 -20 Z", class_name: "det-link-label-background" },
+					{ id: "alt-456", label: "XXX", x_pos: -10, y_pos: -10 }
+				]
 			}
 		});
 		return config;
@@ -190,15 +226,24 @@ export default class DetachedCanvas extends React.Component {
 		};
 	}
 
-	decorationActionHandler() {
-		this.canvasController.displaySubPipeline({
-			pipelineId: "75ed071a-ba8d-4212-a2ad-41a54198dd6b",
-			pipelineFlowId: "ac3d3e04-c3d2-4da7-ab5a-2b9573e5e159"
-		});
-	}
-
 	editActionHandler(data, command) {
-		if (data.editType === "linkNodes") {
+		if (data.editType === "left-flyout-palette") {
+			if (this.state.leftFlyout === "palette") {
+				this.setState({ leftFlyout: null, showLeftFlyout: false });
+
+			} else {
+				this.setState({ leftFlyout: "palette", showLeftFlyout: true });
+			}
+
+		} else if (data.editType === "left-flyout-search") {
+			if (this.state.leftFlyout === "search") {
+				this.setState({ leftFlyout: null, showLeftFlyout: false });
+
+			} else {
+				this.setState({ leftFlyout: "search", showLeftFlyout: true });
+			}
+
+		} else if (data.editType === "linkNodes") {
 			this.createDecorations(data.linkIds[0]);
 
 		} else if (data.editType === "redo" && command.data.editType === "linkNodes") {
@@ -238,10 +283,25 @@ export default class DetachedCanvas extends React.Component {
 	}
 
 	clickActionHandler(source) {
-		if (source.clickType === "DOUBLE_CLICK") {
+		if (source.objectType === "node" &&
+				source.clickType === "DOUBLE_CLICK") {
 			const node = this.canvasController.getNode(source.id, source.pipelineId);
+
 			if (node && node.type === "super_node") {
 				this.canvasController.displaySubPipelineForSupernode(source.id, source.pipelineId);
+
+			} else {
+				const decs = (this.canvasController.getNodeDecorations(source.id))
+					? null
+					: [{
+						id: "123",
+						jsx: (<AppDecoration node={node} />),
+						x_pos: -10,
+						y_pos: -115,
+						width: 250,
+						height: 90
+					}];
+				this.canvasController.setNodeDecorations(source.id, decs);
 			}
 		}
 	}
@@ -256,20 +316,34 @@ export default class DetachedCanvas extends React.Component {
 		const config = this.getConfig();
 		const toolbarConfig = this.getToolbarConfig();
 
+		let leftFlyoutContent = null;
+
+		if (this.state.leftFlyout === "palette") {
+			leftFlyoutContent = (<Palette canvasController={this.canvasController} />);
+
+		} else if (this.state.leftFlyout === "search") {
+			leftFlyoutContent = (
+				<div style={{ width: "300px", padding: "20px" }}>
+					This panel could contain Search controls to provde a sophisticated search experience.
+				</div>
+			);
+		}
+
 		return (
 			<CommonCanvas
 				canvasController={this.canvasController}
-				decorationActionHandler={this.decorationActionHandler}
 				editActionHandler={this.editActionHandler}
 				clickActionHandler={this.clickActionHandler}
 				contextMenuHandler={this.contextMenuHandler}
 				toolbarConfig={toolbarConfig}
 				config={config}
+				showLeftFlyout={this.state.showLeftFlyout}
+				leftFlyoutContent={leftFlyoutContent}
 			/>
 		);
 	}
 }
 
-DetachedCanvas.propTypes = {
+StagesCanvas.propTypes = {
 	config: PropTypes.object
 };

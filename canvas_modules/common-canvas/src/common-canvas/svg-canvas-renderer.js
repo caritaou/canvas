@@ -32,20 +32,24 @@ const markdownIt = require("markdown-it")({
 import { escape as escapeText, forOwn, get } from "lodash";
 import { ASSOC_RIGHT_SIDE_CURVE, ASSOCIATION_LINK, NODE_LINK, COMMENT_LINK,
 	ASSOC_VAR_CURVE_LEFT, ASSOC_VAR_CURVE_RIGHT, ASSOC_VAR_DOUBLE_BACK_RIGHT,
-	LINK_TYPE_CURVE, LINK_TYPE_ELBOW, LINK_TYPE_STRAIGHT,
-	LINK_DIR_LEFT_RIGHT, LINK_DIR_TOP_BOTTOM, LINK_DIR_BOTTOM_TOP,
+	LINK_TYPE_ELBOW, LINK_TYPE_STRAIGHT,
+	LINK_DIR_LEFT_RIGHT, LINK_DIR_RIGHT_LEFT, LINK_DIR_TOP_BOTTOM, LINK_DIR_BOTTOM_TOP,
+	LINK_METHOD_FREEFORM, LINK_METHOD_PORTS,
 	LINK_SELECTION_NONE, LINK_SELECTION_HANDLES, LINK_SELECTION_DETACHABLE,
 	CONTEXT_MENU_BUTTON, DEC_LINK, DEC_NODE, EDIT_ICON,
 	NODE_MENU_ICON, SUPER_NODE_EXPAND_ICON, PORT_OBJECT_IMAGE,
 	TIP_TYPE_NODE, TIP_TYPE_PORT, TIP_TYPE_DEC, TIP_TYPE_LINK,
 	USE_DEFAULT_ICON, USE_DEFAULT_EXT_ICON,
 	SUPER_NODE, SNAP_TO_GRID_AFTER, SNAP_TO_GRID_DURING,
-	NORTH, SOUTH, EAST, WEST }
+	NORTH, SOUTH, EAST, WEST,
+	WYSIWYG, CAUSE_KEYBOARD, CAUSE_MOUSE,
+	CANVAS_FOCUS }
 	from "./constants/canvas-constants";
 import SUPERNODE_ICON from "../../assets/images/supernode.svg";
 import SUPERNODE_EXT_ICON from "../../assets/images/supernode_ext.svg";
 import Logger from "../logging/canvas-logger.js";
 import CanvasUtils from "./common-canvas-utils.js";
+import KeyboardUtils from "./keyboard-utils.js";
 import SvgCanvasDisplay from "./svg-canvas-utils-display.js";
 import SvgCanvasNodes from "./svg-canvas-utils-nodes.js";
 import SvgCanvasComments from "./svg-canvas-utils-comments.js";
@@ -60,6 +64,7 @@ import SvgCanvasZoom from "./svg-canvas-utils-zoom.js";
 import SVGCanvasPipeline from "./svg-canvas-pipeline";
 
 const NINETY_DEGREES = 90;
+const ONE_EIGHTY_DEGREES = 180;
 
 export default class SVGCanvasRenderer {
 	constructor(pipelineId, canvasDiv, canvasController, canvasInfo, selectionInfo, breadcrumbs, nodeLayout, canvasLayout, config, supernodeInfo = {}) {
@@ -101,9 +106,12 @@ export default class SVGCanvasRenderer {
 			this.canvasController,
 			this.canvasDiv,
 			this.activePipeline,
+			this.removeTempCursorOverlay.bind(this), // Function
 			this.displayComments.bind(this), // Function
 			this.displayLinks.bind(this), // Function
-			this.getCommentToolbarPos.bind(this) // Function
+			this.getCommentToolbarPos.bind(this), // Function
+			this.addCanvasZoomBehavior.bind(this), // Function
+			this.removeCanvasZoomBehavior.bind(this) // Function
 		);
 
 		this.dispUtils.setDisplayState();
@@ -118,10 +126,6 @@ export default class SVGCanvasRenderer {
 		// When dragging a node over detached links there may be more than one
 		// entry in this array.
 		this.dragOverDetachedLinks = [];
-
-		// An object containing the x and y offset of the position of the mouse
-		// pointer from the top left corner of the node that is being dragged.
-		this.dragPointerOffsetInNode = null;
 
 		// The node over which the 'guide' object for a new link or a link handle
 		// is being dragged. Used when enableHighlightNodeOnNewLinkDrag config
@@ -255,6 +259,7 @@ export default class SVGCanvasRenderer {
 	// so the canvas can be redisplayed.
 	setCanvasInfoRenderer(canvasInfo, selectionInfo, breadcrumbs, nodeLayout, canvasLayout, config) {
 		this.logger.logStartTimer("setCanvasInfoRenderer" + this.pipelineId.substring(0, 5));
+
 		this.config = config;
 		this.canvasInfo = canvasInfo;
 		this.selectionInfo = selectionInfo;
@@ -275,9 +280,12 @@ export default class SVGCanvasRenderer {
 			this.canvasController,
 			this.canvasDiv,
 			this.activePipeline,
+			this.removeTempCursorOverlay.bind(this), // Function
 			this.displayComments.bind(this), // Function
 			this.displayLinks.bind(this), // Function
-			this.getCommentToolbarPos.bind(this) // Function
+			this.getCommentToolbarPos.bind(this), // Function
+			this.addCanvasZoomBehavior.bind(this), // Function
+			this.removeCanvasZoomBehavior.bind(this) // Function
 		);
 
 
@@ -301,6 +309,12 @@ export default class SVGCanvasRenderer {
 		// associated renderer.
 		this.displayCanvas();
 
+		// Restore the focus back to whatever object is currently in focus if
+		// keyboard navigation is enabled.
+		if (this.config.enableKeyboardNavigation) {
+			this.restoreFocus();
+		}
+
 		this.logger.logEndTimer("setCanvasInfoRenderer" + this.pipelineId.substring(0, 5));
 	}
 
@@ -319,7 +333,6 @@ export default class SVGCanvasRenderer {
 		this.superRenderers.forEach((renderer) => {
 			renderer.setSelectionInfo(selectionInfo);
 		});
-
 	}
 
 	// Returns a subset of renderers, from the current set of super renderers,
@@ -517,12 +530,16 @@ export default class SVGCanvasRenderer {
 			// Position the binding nodes.
 			this.activePipeline.nodes.forEach((d) => {
 				if (d.isSupernodeInputBinding) {
-					d.x_pos = transformedSVGRect.x - d.width;
+					d.x_pos = this.canvasLayout.linkDirection === LINK_DIR_LEFT_RIGHT
+						? transformedSVGRect.x - d.width
+						: transformedSVGRect.x + transformedSVGRect.width;
 					const y = this.nodeUtils.getSupernodePortYOffset(d.id, supernodeDatum.inputs) - topAreaHeight;
 					d.y_pos = (transformedSVGRect.height * (y / svgHt)) + transformedSVGRect.y - d.outputs[0].cy;
 				}
 				if (d.isSupernodeOutputBinding) {
-					d.x_pos = transformedSVGRect.x + transformedSVGRect.width;
+					d.x_pos = this.canvasLayout.linkDirection === LINK_DIR_LEFT_RIGHT
+						? transformedSVGRect.x + transformedSVGRect.width
+						: transformedSVGRect.x - d.width;
 					const y = this.nodeUtils.getSupernodePortYOffset(d.id, supernodeDatum.outputs) - topAreaHeight;
 					d.y_pos = (transformedSVGRect.height * (y / svgHt)) + transformedSVGRect.y - d.inputs[0].cy;
 				}
@@ -630,14 +647,6 @@ export default class SVGCanvasRenderer {
 	// Returns true whenever a node or comment is being moved.
 	isMoving() {
 		this.dragObjectUtils.isMoving();
-	}
-
-	// Returns true if the node should have a resizing area. We should display
-	// a sizing area even for collapsed supernodes so it is available if/when
-	// the supernode is expanded
-	shouldDisplayNodeSizingArea(node) {
-		return !CanvasUtils.isSuperBindingNode(node) &&
-			(CanvasUtils.isSupernode(node) || this.config.enableResizableNodes);
 	}
 
 	getAllNodeGroupsSelection() {
@@ -752,6 +761,14 @@ export default class SVGCanvasRenderer {
 	convertPageCoordsToCanvasCoords(x, y) {
 		const svgRect = this.canvasSVG.node().getBoundingClientRect();
 		return this.zoomUtils.transformPos({ x: x - Math.round(svgRect.left), y: y - Math.round(svgRect.top) });
+	}
+
+	// Convert coordinates from canvas to page coordinates (based
+	// on the page top left corner).
+	convertCanvasCoordsToPageCoords(x, y) {
+		const svgRect = this.canvasSVG.node().getBoundingClientRect();
+		const pos = this.zoomUtils.unTransformPos({ x, y });
+		return { x: pos.x + Math.round(svgRect.left), y: pos.y + Math.round(svgRect.top) };
 	}
 
 	// Creates the div which contains the ghost node for drag and
@@ -1269,7 +1286,12 @@ export default class SVGCanvasRenderer {
 			.attr("data-pipeline-id", this.activePipeline.id)
 			.attr("class", "d3-svg-background")
 			.attr("pointer-events", "all")
-			.style("cursor", "default");
+			.style("cursor", "default")
+			.on("mousedown", () => {
+				if (!this.svgCanvasTextArea.isEditingText()) {
+					this.canvasController.setFocusOnCanvas();
+				}
+			});
 
 		// Only attach the 'defs' to the top most SVG area when we are displaying
 		// either the primary pipeline full page or a sub-pipeline full page.
@@ -1291,7 +1313,7 @@ export default class SVGCanvasRenderer {
 	// the populated case we do.
 	resetCanvasSVGBehaviors() {
 		// Remove zoom behaviors from canvasSVG area.
-		this.canvasSVG.on(".zoom", null);
+		this.removeCanvasZoomBehavior();
 
 		// If there are no nodes or comments we don't apply any zoom behaviors
 		// to the SVG area. We only attach the zoom behaviour to the top most SVG
@@ -1299,8 +1321,7 @@ export default class SVGCanvasRenderer {
 		// or a sub-pipeline full page.
 		if (!this.activePipeline.isEmptyOrBindingsOnly() &&
 				this.dispUtils.isDisplayingFullPage()) {
-			this.canvasSVG
-				.call(this.zoomUtils.getZoomHandler());
+			this.canvasSVG.call(this.zoomUtils.getZoomHandler());
 		}
 
 		// These behaviors will be applied to SVG areas at the top level and
@@ -1339,6 +1360,17 @@ export default class SVGCanvasRenderer {
 				this.logger.log("Zoom - context menu");
 				this.openContextMenu(d3Event, "canvas");
 			});
+	}
+
+	// When adding back zoom behavior we need to reset all canvas behaviors
+	// because the ".zoom" events will have been removed from this.canvasSVG
+	// whenn removeCanvasZoomBehavior was called.
+	addCanvasZoomBehavior() {
+		this.resetCanvasSVGBehaviors();
+	}
+
+	removeCanvasZoomBehavior() {
+		this.canvasSVG.on(".zoom", null);
 	}
 
 	// Resets the pointer cursor on the background rectangle in the Canvas SVG area.
@@ -1479,12 +1511,11 @@ export default class SVGCanvasRenderer {
 	// Repositions the comment toolbar so it is always over the top of the
 	// comment being edited.
 	repositionCommentToolbar() {
-		if (this.config.enableMarkdownInComments &&
-				this.dispUtils.isDisplayingFullPage() &&
-				this.svgCanvasTextArea.isEditingText()) {
+		if (this.dispUtils.isDisplayingFullPage() &&
+			this.svgCanvasTextArea.isEditingText()) {
 			// If a node label or text decoration is being edited com will be undefined.
 			const com = this.activePipeline.getComment(this.svgCanvasTextArea.getEditingTextId());
-			if (com) {
+			if (com && (com.contentType === WYSIWYG || this.config.enableMarkdownInComments)) {
 				const pos = this.getCommentToolbarPos(com);
 				this.canvasController.moveTextToolbar(pos.x, pos.y);
 			}
@@ -1583,6 +1614,7 @@ export default class SVGCanvasRenderer {
 			.attr("transform", (d) => `translate(${d.x_pos}, ${d.y_pos})`)
 			.attr("class", (d) => this.getNodeGroupClass(d))
 			.attr("style", (d) => this.getNodeGrpStyle(d))
+			.attr("tabindex", (d) => (this.config.enableKeyboardNavigation ? -1 : null))
 			.call((joinedNodeGrps) => this.updateNodes(joinedNodeGrps, data));
 	}
 
@@ -1604,10 +1636,21 @@ export default class SVGCanvasRenderer {
 
 		const nonBindingNodeGrps = joinedNodeGrps.filter((node) => !CanvasUtils.isSuperBindingNode(node));
 
+		// Node Focus Outline
+		// This is created by the 'moveFocusTo' function when focus is moved to a
+		// node. The 'd3-focus-path' element only exists for one canvas object at a time.
+		nonBindingNodeGrps
+			.selectChildren(".d3-focus-path")
+			.data((d) => ([d]), (d) => d.id)
+			.join(
+				(enter) => null // Focus outline is created when focus is moved to the node (in moveFocusTo)
+			)
+			.attr("d", (d) => this.getNodeShapePathSizing(d));
+
 		// Node Sizing Area
 		nonBindingNodeGrps
 			.selectChildren(".d3-node-sizing")
-			.data((d) => (this.shouldDisplayNodeSizingArea(d) ? [d] : []), (d) => d.id)
+			.data((d) => (CanvasUtils.isNodeResizable(d, this.config) ? [d] : []), (d) => d.id)
 			.join(
 				(enter) =>
 					enter
@@ -1888,7 +1931,7 @@ export default class SVGCanvasRenderer {
 				if (node.layout.inputPortObject !== PORT_OBJECT_IMAGE) {
 					obj
 						.attr("d", this.getPortArrowPath(port))
-						.attr("transform", this.getPortArrowPathTransform(port));
+						.attr("transform", this.getInputPortArrowPathTransform(port));
 				}
 			});
 
@@ -1951,7 +1994,8 @@ export default class SVGCanvasRenderer {
 						.attr("x", port.cx - (node.layout.outputPortWidth / 2))
 						.attr("y", port.cy - (node.layout.outputPortHeight / 2))
 						.attr("width", node.layout.outputPortWidth)
-						.attr("height", node.layout.outputPortHeight);
+						.attr("height", node.layout.outputPortHeight)
+						.attr("transform", this.getPortImageTransform(port));
 				} else {
 					obj
 						.attr("r", this.getPortRadius(node))
@@ -1971,15 +2015,131 @@ export default class SVGCanvasRenderer {
 	// Attaches the appropriate listeners to the node groups.
 	attachNodeGroupListeners(nodeGrps) {
 		nodeGrps
+			.on("keydown", (d3Event, d) => {
+				if (this.config.enableKeyboardNavigation) {
+					if (KeyboardUtils.nextObjectInGroup(d3Event)) {
+						const linkInfos = this.activePipeline.getNextLinksFromNode(d);
+						if (linkInfos.length > 0) {
+							const linkInfosAll = this.activePipeline.getAllLinksForNode(d);
+							linkInfosAll.forEach((li) => (li.link.navObject = d));
+							this.setFocusObject(linkInfos[0].link, d3Event);
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.previousObjectInGroup(d3Event)) {
+						const linkInfos = this.activePipeline.getPreviousLinksToNode(d);
+						if (linkInfos.length > 0) {
+							const linkInfosAll = this.activePipeline.getAllLinksForNode(d);
+							linkInfosAll.forEach((li) => (li.link.navObject = d));
+							this.setFocusObject(linkInfos[0].link, d3Event);
+						}
+
+					} else if (KeyboardUtils.moveObjectUp(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, NORTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.moveObjectDown(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, SOUTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.moveObjectRight(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, EAST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.moveObjectLeft(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, WEST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.selectObject(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "node", false, false);
+
+					} else if (KeyboardUtils.selectObjectAugment(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "node", false, true);
+
+					} else if (KeyboardUtils.selectObjectRange(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "node", true, false);
+
+					} else if (KeyboardUtils.sizeObjectUp(d3Event)) {
+						if (CanvasUtils.isNodeResizable(d, this.config)) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, NORTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectDown(d3Event)) {
+						if (CanvasUtils.isNodeResizable(d, this.config)) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, SOUTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectRight(d3Event)) {
+						if (CanvasUtils.isNodeResizable(d, this.config)) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, EAST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectLeft(d3Event)) {
+						if (CanvasUtils.isNodeResizable(d, this.config)) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, WEST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.createLink(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragNewLinkUtils.createNewLinkFromSelections(), true); // true indicates "augment" the selection
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.displayContextOptions(d3Event)) {
+						// Don't let keypress go through to the Canvas otherwise the
+						// canvas contenxt menu/toolbar will be opened.
+						d3Event.stopPropagation();
+
+						if (!CanvasUtils.isSuperBindingNode(d)) {
+							this.selectObject(d3Event, d, "node");
+
+							if (this.config.enableContextToolbar) {
+								this.addContextToolbar(d3Event, d, "node", CAUSE_KEYBOARD);
+							} else {
+								const pos = this.getObjectCenterPosition(d3Event.currentTarget);
+								this.openContextMenu(d3Event, "node", d, null, pos);
+							}
+						}
+					}
+				}
+			})
 			.on("mouseenter", (d3Event, d) => {
 				if (this.isDragging()) {
 					return;
 				}
+
 				const nodeGrp = d3.select(d3Event.currentTarget);
-				this.raiseNodeToTop(nodeGrp);
+				this.raiseNodeToTop(nodeGrp, d3Event);
+				this.restoreFocus(); // raiseNodeToTop will removing the visual focus so restore it.
+
 				this.setNodeStyles(d, "hover", nodeGrp);
+
 				if (this.config.enableContextToolbar) {
-					this.addContextToolbar(d3Event, d, "node");
+					this.addContextToolbar(d3Event, d, "node", CAUSE_MOUSE);
 				} else {
 					this.addDynamicNodeIcons(d3Event, d, nodeGrp);
 				}
@@ -2020,17 +2180,16 @@ export default class SVGCanvasRenderer {
 				this.logger.logStartTimer("Node Group - mouse down");
 				d3Event.stopPropagation();
 				if (this.svgCanvasTextArea.isEditingText()) {
-					this.svgCanvasTextArea.completeEditing();
+					this.svgCanvasTextArea.completeEditing(d3Event);
 				}
 				if (!this.config.enableDragWithoutSelect) {
+					if (this.config.enableKeyboardNavigation) {
+						this.activePipeline.setTabGroupIndexForObj(d);
+						this.setFocusObject(d, d3Event);
+					}
 					this.selectObjectD3Event(d3Event, d, "node");
 				}
 				this.logger.logEndTimer("Node Group - mouse down");
-			})
-			.on("mousemove", (d3Event, d) => {
-				// this.logger.log("Node Group - mouse move");
-				// Don't stop propogation. Mouse move messages must be allowed to
-				// propagate to canvas zoom operation.
 			})
 			.on("click", (d3Event, d) => {
 				this.logger.log("Node Group - click");
@@ -2056,9 +2215,19 @@ export default class SVGCanvasRenderer {
 					if (this.config.enableDragWithoutSelect) {
 						this.selectObjectD3Event(d3Event, d, "node");
 					}
+					this.setFocusObject(d, d3Event);
 					this.openContextMenu(d3Event, "node", d);
 				}
 			});
+	}
+
+	getObjectCenterPosition(obj) {
+		const rect = obj.getBoundingClientRect();
+		const rect2 = this.canvasSVG.node().getBoundingClientRect();
+		return {
+			x: rect.left - rect2.left + (rect.width / 2),
+			y: rect.top - rect2.top + (rect.height / 2)
+		};
 	}
 
 	attachNodeSizingListeners(nodeGrps) {
@@ -2309,24 +2478,12 @@ export default class SVGCanvasRenderer {
 	// the d3Event object passed in.
 	selectObjectD3Event(d3Event, d, objType) {
 		this.selectObject(
-			d,
 			d3Event.type,
+			d,
+			objType,
 			d3Event.shiftKey,
-			CanvasUtils.isCmndCtrlPressed(d3Event));
-		// If the selection has changed we need to recreate any currently displayed
-		// context toolbar because the context actions may have changed based on
-		// the new selection.
-		this.recreateContextToolbar(d3Event, d, objType);
-	}
-
-	// Adds the object passed in to the set of selected objects using
-	// the d3Event object's sourceEvent object.
-	selectObjectSourceEvent(d3Event, d) {
-		this.selectObject(
-			d,
-			d3Event.type,
-			d3Event.sourceEvent.shiftKey,
-			CanvasUtils.isCmndCtrlPressed(d3Event.sourceEvent));
+			KeyboardUtils.isMetaKey(d3Event)
+		);
 	}
 
 	// Performs required action for when either a comment, node or link is selected.
@@ -2334,8 +2491,8 @@ export default class SVGCanvasRenderer {
 	// currently selected set of objects; or even toggling the object's selection
 	// off. This method also sends a SINGLE_CLICK action to the
 	// clickActionHandler callback in the host application.
-	selectObject(d, d3EventType, isShiftKeyPressed, isCmndCtrlPressed) {
-		this.canvasController.selectObject(d.id, isShiftKeyPressed, isCmndCtrlPressed, this.activePipeline.id);
+	selectObject(d3EventType, d, objectType, range = false, augment = false) {
+		this.canvasController.selectObject(d.id, range, augment, this.activePipeline.id);
 
 		// Even though the single click message below should be emitted
 		// from common canvas for comments, if we uncomment this line it prevents
@@ -2343,11 +2500,10 @@ export default class SVGCanvasRenderer {
 		// to be a timing issue since the same problem is not evident with the
 		// similar code for the node group object.
 		// TODO - Issue 2465 - Find out why this problem occurs.
-		const objectTypeName = this.activePipeline.getObjectTypeName(d);
-		if (objectTypeName === "node" || objectTypeName === "link") {
+		if (objectType === "node" || objectType === "link") {
 			this.canvasController.clickActionHandler({
 				clickType: d3EventType === "contextmenu" || this.ellipsisClicked ? "SINGLE_CLICK_CONTEXTMENU" : "SINGLE_CLICK",
-				objectType: objectTypeName,
+				objectType: objectType,
 				id: d.id,
 				selectedObjectIds: this.activePipeline.getSelectedObjectIds(),
 				pipelineId: this.activePipeline.id });
@@ -2818,9 +2974,9 @@ export default class SVGCanvasRenderer {
 		}
 	}
 
-	getContextToolbarPos(objType, d) {
+	getDefaultContextToolbarPos(objType, d) {
 		if (objType === "link") {
-			return d.pathInfo.centerPoint;
+			return { ...d.pathInfo.centerPoint };
 
 		} else if (objType === "node" && d.layout.contextToolbarPosition === "topCenter" && !d.is_expanded) {
 			return { x: d.x_pos + (d.width / 2), y: d.y_pos };
@@ -2829,11 +2985,15 @@ export default class SVGCanvasRenderer {
 		return { x: d.x_pos + d.width, y: d.y_pos };
 	}
 
-	addContextToolbar(d3Event, d, objType) {
+	addContextToolbar(d3Event, d, objType, cause, xPos, yPos) {
 		if (!this.isSizing() && !this.isDragging() &&
 				!this.svgCanvasTextArea.isEditingText() && !CanvasUtils.isSuperBindingNode(d)) {
-			this.canvasController.setMouseInObject(d.id);
-			let pos = this.getContextToolbarPos(objType, d);
+			if (cause === CAUSE_MOUSE) {
+				this.canvasController.setMouseInObject(d.id);
+			}
+			let pos = this.getDefaultContextToolbarPos(objType, d);
+			pos.x = xPos ? pos.x + xPos : pos.x;
+			pos.y = yPos ? pos.y + yPos : pos.y;
 			pos = this.zoomUtils.unTransformPos(pos);
 			this.openContextMenu(d3Event, objType, d, null, pos);
 		}
@@ -2843,13 +3003,6 @@ export default class SVGCanvasRenderer {
 		this.canvasController.setMouseInObject(null);
 		if (this.canvasController.isContextMenuDisplayed()) {
 			setTimeout(() => this.canvasController.closeContextToolbar(), 200);
-		}
-	}
-
-	recreateContextToolbar(d3Event, d, objType) {
-		if (this.config.enableContextToolbar) {
-			this.removeContextToolbar();
-			this.addContextToolbar(d3Event, d, objType);
 		}
 	}
 
@@ -2868,6 +3021,7 @@ export default class SVGCanvasRenderer {
 					const rect = ellipsisGrp.node().getBoundingClientRect();
 					const rect2 = this.canvasSVG.node().getBoundingClientRect();
 					const pos = { x: rect.left - rect2.left, y: rect.bottom - rect2.top };
+					this.setFocusObject(d, d3Event);
 					this.openContextMenu(d3Event, "node", d, null, pos);
 				}
 			});
@@ -2973,7 +3127,7 @@ export default class SVGCanvasRenderer {
 		const nodeGrp = d3.select(nodeObj);
 		nodeGrp.selectAll("." + portArrowClassName)
 			.attr("d", (port) => this.getPortArrowPath(port))
-			.attr("transform", (port) => this.getPortArrowPathTransform(port));
+			.attr("transform", (port) => this.getInputPortArrowPathTransform(port));
 	}
 
 	// Returns true if the port (from a node template) passed in has a max
@@ -3033,8 +3187,17 @@ export default class SVGCanvasRenderer {
 
 	}
 
+	// Opens the canvas context menu or context toolbar, depending on which is enabled.
+	// This is called from svg-canvas-d3.js to enable a keyboard shortcut to open
+	// the context options in an appropriate position.
+	openCanvasContextOptions(evt) {
+		this.openContextMenu(evt, "canvas", null, null, { x: 50, y: 50 });
+	}
+
 	// Opens either the context menu or the context toolbar depending on which is
-	// currently enabled.
+	// currently enabled. The pos parameter is optional. It is provided when menu
+	// is opened from teh keyboard and it sets both the context menu position and
+	// the "mouse position", if one is needed, by the action selected in the menu.
 	openContextMenu(d3Event, type, d, port, pos) {
 		CanvasUtils.stopPropagationAndPreventDefault(d3Event); // Stop the browser context menu appearing
 		this.canvasController.contextMenuHandler({
@@ -3045,7 +3208,7 @@ export default class SVGCanvasRenderer {
 			cmPos: pos
 				? pos
 				: this.getMousePos(d3Event, this.canvasDiv.selectAll("svg")), // Get mouse pos relative to top most SVG area even in a subflow.
-			mousePos: this.getMousePosSnapToGrid(this.getTransformedMousePos(d3Event)),
+			mousePos: pos ? pos : this.getMousePosSnapToGrid(this.getTransformedMousePos(d3Event)),
 			selectedObjectIds: this.canvasController.getSelectedObjectIds(),
 			addBreadcrumbs: (d && d.type === SUPER_NODE) ? this.getSupernodeBreadcrumbs(d3Event.currentTarget) : null,
 			port: port,
@@ -3297,31 +3460,33 @@ export default class SVGCanvasRenderer {
 			return this.getPortArcsNodeShapePathVertical(data, data.inputs, data.inputPortsWidth, data.outputs, data.outputPortsWidth);
 		} else if (this.canvasLayout.linkDirection === LINK_DIR_BOTTOM_TOP) {
 			return this.getPortArcsNodeShapePathVertical(data, data.outputs, data.outputPortsWidth, data.inputs, data.inputPortsWidth);
+		} else if (this.canvasLayout.linkDirection === LINK_DIR_RIGHT_LEFT) {
+			return this.getPortArcsNodeShapePathHoriz(data, data.outputs, data.outputPortsHeight, data.inputs, data.inputPortsHeight);
 		}
 
-		return this.getPortArcsNodeShapePathLeftRight(data);
+		return this.getPortArcsNodeShapePathHoriz(data, data.inputs, data.inputPortsHeight, data.outputs, data.outputPortsHeight);
 	}
 
 	// Returns a path that will draw the outline shape for the 'port-arcs' display
-	// which shows arcs around each of the node circles for left to right link direction.
-	getPortArcsNodeShapePathLeftRight(data) {
+	// which shows arcs around each of the node circles for the horizontal (LeftRight and RightLeft) directions.
+	getPortArcsNodeShapePathHoriz(data, leftPorts, leftPortsHeight, rightPorts, rightPortsHeight) {
 		let path = "M 0 0 L " + data.width + " 0 "; // Draw line across the top of the node
 
-		if (data.outputs && data.outputs.length > 0) {
+		if (rightPorts && rightPorts.length > 0) {
 			let endPoint = data.layout.portArcOffset;
 
 			// Draw straight segment down to ports (if needed)
-			if (data.outputPortsHeight < data.height) {
-				endPoint = data.outputs[0].cy - data.layout.portArcRadius;
+			if (rightPortsHeight < data.height) {
+				endPoint = rightPorts[0].cy - data.layout.portArcRadius;
 			}
 
 			path += " L " + data.width + " " + endPoint;
 
 			// Draw port arcs
-			data.outputs.forEach((port, index) => {
+			rightPorts.forEach((port, index) => {
 				endPoint += (data.layout.portArcRadius * 2);
 				path += " A " + data.layout.portArcRadius + " " + data.layout.portArcRadius + " 180 0 1 " + data.width + " " + endPoint;
-				if (index < data.outputs.length - 1) {
+				if (index < rightPorts.length - 1) {
 					endPoint += data.layout.portArcSpacing;
 					path += " L " + data.width + " " + endPoint;
 				}
@@ -3330,26 +3495,26 @@ export default class SVGCanvasRenderer {
 			// Draw finishing segment to bottom right corner
 			path += " L " + data.width + " " + data.height;
 
-		// If no output ports just draw a straight line.
+		// If no right-side ports just draw a straight line.
 		} else {
 			path += " L " + data.width + " " + data.height;
 		}
 
 		path += " L 0 " + data.height; // Draw line across the bottom of the node
 
-		if (data.inputs && data.inputs.length > 0) {
+		if (leftPorts && leftPorts.length > 0) {
 			let endPoint2 = data.height - data.layout.portArcOffset;
 
-			if (data.inputPortsHeight < data.height) {
-				endPoint2 = data.inputs[data.inputs.length - 1].cy + data.layout.portArcRadius;
+			if (leftPortsHeight < data.height) {
+				endPoint2 = leftPorts[leftPorts.length - 1].cy + data.layout.portArcRadius;
 			}
 
 			path += " L 0 " + endPoint2;
 
-			data.inputs.forEach((port, index) => {
+			leftPorts.forEach((port, index) => {
 				endPoint2 -= (data.layout.portArcRadius * 2);
 				path += " A " + data.layout.portArcRadius + " " + data.layout.portArcRadius + " 180 0 1 0 " + endPoint2;
-				if (index < data.inputs.length - 1) {
+				if (index < leftPorts.length - 1) {
 					endPoint2 -= data.layout.portArcSpacing;
 					path += " L 0 " + endPoint2;
 				}
@@ -3357,13 +3522,13 @@ export default class SVGCanvasRenderer {
 
 			path += " Z"; // Draw finishing segment back to origin
 		} else {
-			path += " Z"; // If no input ports just draw a straight line.
+			path += " Z"; // If no left-side ports just draw a straight line.
 		}
 		return path;
 	}
 
 	// Returns a path that will draw the outline shape for the 'port-arcs' display
-	// which shows arcs around each of the node circles for vertical link directions.
+	// which shows arcs around each of the node circles for vertical (TopBottom and BottomTop) directions.
 	getPortArcsNodeShapePathVertical(data, topPorts, topPortsWidth, bottomPorts, bottomPortsWidth) {
 		let path = "M 0 0 L 0 " + data.height; // Draw line down the left of the node
 
@@ -3390,7 +3555,7 @@ export default class SVGCanvasRenderer {
 			// Draw finishing segment to bottom right corner
 			path += " L " + data.width + " " + data.height;
 
-		// If no output ports just draw a straight line.
+		// If no bottom ports just draw a straight line.
 		} else {
 			path += " L " + data.width + " " + data.height;
 		}
@@ -3417,7 +3582,7 @@ export default class SVGCanvasRenderer {
 
 			path += " Z"; // Draw finishing segment back to origin
 		} else {
-			path += " Z"; // If no input ports just draw a straight line.
+			path += " Z"; // If no top ports just draw a straight line.
 		}
 		return path;
 	}
@@ -3464,6 +3629,7 @@ export default class SVGCanvasRenderer {
 					ports.length === 1) {
 				ports[0].cx = xPos;
 				ports[0].cy = yPos;
+				ports[0].dir = CanvasUtils.getPortDir(ports[0].cx, ports[0].cy, node);
 			} else {
 				// If we are only going to display a single port, we set all the
 				// port positions to be the same as if there is only one port.
@@ -3496,6 +3662,7 @@ export default class SVGCanvasRenderer {
 		ports.forEach((p) => {
 			p.cx = xPosition;
 			p.cy = yPos;
+			p.dir = CanvasUtils.getPortDir(p.cx, p.cy, node);
 		});
 	}
 
@@ -3528,6 +3695,7 @@ export default class SVGCanvasRenderer {
 			xPosition += (node.layout.portArcRadius * multiplier);
 			p.cx = xPosition;
 			p.cy = yPos;
+			p.dir = CanvasUtils.getPortDir(p.cx, p.cy, node);
 			xPosition += ((node.layout.portArcRadius + node.layout.portArcSpacing) * multiplier);
 		});
 	}
@@ -3541,6 +3709,7 @@ export default class SVGCanvasRenderer {
 					ports.length === 1) {
 				ports[0].cx = xPos;
 				ports[0].cy = yPos;
+				ports[0].dir = CanvasUtils.getPortDir(ports[0].cx, ports[0].cy, node);
 
 			} else {
 				// If we are only going to display a single port, we set all the
@@ -3574,6 +3743,7 @@ export default class SVGCanvasRenderer {
 		ports.forEach((p) => {
 			p.cx = xPos;
 			p.cy = yPosition;
+			p.dir = CanvasUtils.getPortDir(p.cx, p.cy, node);
 		});
 	}
 
@@ -3606,6 +3776,7 @@ export default class SVGCanvasRenderer {
 			yPosition += (node.layout.portArcRadius * multiplier);
 			p.cx = xPos;
 			p.cy = yPosition;
+			p.dir = CanvasUtils.getPortDir(p.cx, p.cy, node);
 			yPosition += ((node.layout.portArcRadius + node.layout.portArcSpacing) * multiplier);
 		});
 	}
@@ -3626,6 +3797,7 @@ export default class SVGCanvasRenderer {
 			}
 			p.cx = xPos;
 			p.cy = yPos;
+			p.dir = CanvasUtils.getPortDir(p.cx, p.cy, node);
 		});
 	}
 
@@ -3673,55 +3845,52 @@ export default class SVGCanvasRenderer {
 				(enter) => this.createComments(enter)
 			)
 			.attr("transform", (c) => `translate(${c.x_pos}, ${c.y_pos})`)
+			.attr("tabindex", (d) => (this.config.enableKeyboardNavigation ? -1 : null))
 			.attr("class", (c) => this.getCommentGroupClass(c))
 			.call((joinedCommentGrps) => this.updateComments(joinedCommentGrps));
 	}
 
 	createComments(enter) {
+		this.logger.logStartTimer("createComments");
+
 		const newCommentGroups = enter
 			.append("g")
 			.attr("data-id", (c) => this.getId("comment_grp", c.id))
 			.call(this.attachCommentGroupListeners.bind(this));
 
-		// Comment Sizing Area
-		newCommentGroups
-			.append("rect")
-			.attr("class", "d3-comment-sizing")
-			.call(this.attachCommentSizingListeners.bind(this));
-
-		// Comment Selection Highlighting Outline
-		newCommentGroups
-			.append("rect")
-			.attr("class", "d3-comment-selection-highlight");
-
-		// Background Rectangle
-		newCommentGroups
-			.append("rect")
-			.attr("width", (c) => c.width)
-			.attr("height", (c) => c.height)
-			.attr("x", 0)
-			.attr("y", 0)
-			.attr("class", "d3-comment-rect");
-
-		// Comment Text
-		newCommentGroups
-			.append("foreignObject")
-			.attr("class", "d3-foreign-object-comment-text")
-			.attr("x", 0)
-			.attr("y", 0)
-			.append("xhtml:div") // Provide a namespace when div is inside foreignObject
-			.attr("class", "d3-comment-text");
+		this.logger.logEndTimer("createComments");
 
 		return newCommentGroups;
 	}
 
 	updateComments(joinedCommentGrps) {
+		this.logger.logStartTimer("updateComments");
+
+		// Comment Focus Outline
+		// This is created by the 'moveFocusTo' function when focus is moved to a
+		// comment. The 'd3-focus-path' element only exists for one canvas object at a time.
 		joinedCommentGrps
-			.attr("transform", (c) => `translate(${c.x_pos}, ${c.y_pos})`)
-			.attr("class", (c) => this.getCommentGroupClass(c));
+			.selectChildren(".d3-focus-path")
+			.data((d) => ([d]), (d) => d.id)
+			.join(
+				(enter) => null // Focus outline is created when focus is moved to the comment (in moveFocusTo)
+			)
+			.attr("x", -this.canvasLayout.commentSizingArea)
+			.attr("y", -this.canvasLayout.commentSizingArea)
+			.attr("height", (c) => c.height + (2 * this.canvasLayout.commentSizingArea))
+			.attr("width", (c) => c.width + (2 * this.canvasLayout.commentSizingArea));
 
 		// Comment Sizing Area
-		joinedCommentGrps.selectChildren(".d3-comment-sizing")
+		joinedCommentGrps
+			.selectChildren(".d3-comment-sizing")
+			.data((d) => ([d]), (d) => d.id)
+			.join(
+				(enter) =>
+					enter
+						.append("rect")
+						.attr("class", "d3-comment-sizing")
+						.call(this.attachCommentSizingListeners.bind(this))
+			)
 			.datum((c) => this.activePipeline.getComment(c.id))
 			.attr("x", -this.canvasLayout.commentSizingArea)
 			.attr("y", -this.canvasLayout.commentSizingArea)
@@ -3730,7 +3899,15 @@ export default class SVGCanvasRenderer {
 			.attr("class", "d3-comment-sizing");
 
 		// Comment Selection Highlighting Outline
-		joinedCommentGrps.selectChildren(".d3-comment-selection-highlight")
+		joinedCommentGrps
+			.selectChildren(".d3-comment-selection-highlight")
+			.data((d) => ([d]), (d) => d.id)
+			.join(
+				(enter) =>
+					enter
+						.append("rect")
+						.attr("class", "d3-comment-selection-highlight")
+			)
 			.datum((c) => this.activePipeline.getComment(c.id))
 			.attr("x", -this.canvasLayout.commentHighlightGap)
 			.attr("y", -this.canvasLayout.commentHighlightGap)
@@ -3739,25 +3916,53 @@ export default class SVGCanvasRenderer {
 			.attr("data-selected", (c) => (this.activePipeline.isSelected(c.id) ? "yes" : "no"))
 			.attr("style", (d) => this.getNodeSelectionOutlineStyle(d, "default"));
 
-		// Comment Body
-		joinedCommentGrps.selectChildren(".d3-comment-rect")
-			.datum((c) => this.activePipeline.getComment(c.id))
-			.attr("height", (c) => c.height)
-			.attr("width", (c) => c.width)
-			.attr("class", "d3-comment-rect")
-			.attr("style", (c) => this.getCommentBodyStyle(c, "default"));
-
 		// Comment Text
-		joinedCommentGrps.selectChildren(".d3-foreign-object-comment-text")
+		joinedCommentGrps
+			.selectChildren(".d3-foreign-object-comment-text")
+			.data((d) => [d], (d) => d.id)
+			.join(
+				(enter) => {
+					const fo = enter
+						.append("foreignObject")
+						.attr("class", (d) => "d3-foreign-object-comment-text")
+						.attr("x", 0)
+						.attr("y", 0);
+					fo
+						.append("xhtml:div") // Provide a namespace when div is inside foreignObject
+						.attr("class", "d3-comment-text-scroll")
+						.append("xhtml:div") // Provide a namespace when div is inside foreignObject
+						.attr("class", "d3-comment-text-outer")
+						.append("xhtml:div") // Provide a namespace when div is inside foreignObject
+						.attr("class", (d) => "d3-comment-text" + (d.contentType !== WYSIWYG ? " markdown" : ""));
+					return fo;
+				}
+			)
 			.datum((c) => this.activePipeline.getComment(c.id))
 			.attr("width", (c) => c.width)
 			.attr("height", (c) => c.height)
-			.select("div")
-			.attr("style", (c) => this.getNodeLabelStyle(c, "default"))
-			.html((c) => (
-				this.config.enableMarkdownInComments
-					? markdownIt.render(c.content)
-					: escapeText(c.content)));
+
+			.select(".d3-comment-text-scroll")
+			.attr("tabindex", "-1") // Prevent tab taking focus to the scroll div
+			.each((d, i, commentTexts) => {
+				const commentElement = d3.select(commentTexts[i]);
+				CanvasUtils.applyOutlineStyle(commentElement, d.formats); // Only apply outlineStyle format here
+			})
+
+			.select(".d3-comment-text-outer")
+			.select(".d3-comment-text")
+			.attr("style", null) // Wipe the in-line styles before applying formats
+
+			.each((d, i, commentTexts) => {
+				const commentElement = d3.select(commentTexts[i]);
+				CanvasUtils.applyNonOutlineStyle(commentElement, d.formats); // Apply all formats except outlineStyle
+
+			})
+
+			.html((d) =>
+				(d.contentType !== WYSIWYG && this.config.enableMarkdownInComments
+					? markdownIt.render(d.content)
+					: escapeText(d.content))
+			);
 
 		// Add or remove drag object behavior for the comment groups.
 		if (this.config.enableEditingActions) {
@@ -3773,35 +3978,143 @@ export default class SVGCanvasRenderer {
 	// Attaches the appropriate listeners to the comment groups.
 	attachCommentGroupListeners(commentGrps) {
 		commentGrps
+			.on("keydown", (d3Event, d) => {
+				if (this.config.enableKeyboardNavigation) {
+					if (this.svgCanvasTextArea.isEditingText()) {
+						return;
+					}
+					if (KeyboardUtils.nextObjectInGroup(d3Event)) {
+						const linkInfos = this.activePipeline.getNextLinksFromComment(d);
+						if (linkInfos.length > 0) {
+							linkInfos.forEach((li) => (li.link.navObject = d));
+							this.setFocusObject(linkInfos[0].link, d3Event);
+						}
+
+					} else if (KeyboardUtils.moveObjectUp(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, NORTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.moveObjectDown(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, SOUTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.moveObjectRight(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, EAST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.moveObjectLeft(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.moveObject(d, WEST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectUp(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, NORTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectDown(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, SOUTH));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectRight(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, EAST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.sizeObjectLeft(d3Event)) {
+						if (this.config.enableEditingActions) {
+							this.canvasController.autoSelectFocusObj(() =>
+								this.dragObjectUtils.sizeObject(d, WEST));
+						}
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.scrollTextUp(d3Event)) {
+						this.scrollComment(d3Event, 10);
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.scrollTextDown(d3Event)) {
+						this.scrollComment(d3Event, -10);
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.selectObject(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "comment", false, false);
+
+					} else if (KeyboardUtils.selectObjectAugment(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "comment", false, true);
+
+					} else if (KeyboardUtils.displayContextOptions(d3Event)) {
+						// Don't let keypress go through to the Canvas otherwise the
+						// canvas context menu/toolbar will be opened.
+						d3Event.stopPropagation();
+
+						this.selectObject(d3Event, d, "comment");
+
+						if (this.config.enableContextToolbar) {
+							this.addContextToolbar(d3Event, d, "comment", CAUSE_KEYBOARD);
+						} else {
+							const pos = this.getObjectCenterPosition(d3Event.currentTarget);
+							this.openContextMenu(d3Event, "comment", d, null, pos);
+						}
+					}
+				}
+			})
 			.on("mouseenter", (d3Event, d) => {
 				if (this.isDragging()) {
 					return;
 				}
-				this.setCommentStyles(d, "hover", d3.select(d3Event.currentTarget));
 				if (this.config.enableEditingActions && d.id !== this.svgCanvasTextArea.getEditingTextId()) {
 					this.createCommentPort(d3Event.currentTarget, d);
 				}
 				if (this.config.enableContextToolbar) {
-					this.addContextToolbar(d3Event, d, "comment");
+					this.addContextToolbar(d3Event, d, "comment", CAUSE_MOUSE);
+				}
+				if (this.commentHasScrollableText(d3Event.currentTarget)) {
+					this.removeCanvasZoomBehavior(); // Remove canvas zoom behavior to allow scrolling of comment
 				}
 			})
 			.on("mouseleave", (d3Event, d) => {
-				this.setCommentStyles(d, "default", d3.select(d3Event.currentTarget));
 				if (this.config.enableContextToolbar) {
 					this.removeContextToolbar();
 				}
 				if (this.config.enableEditingActions) {
 					this.deleteCommentPort(d3Event.currentTarget);
 				}
+
+				this.addCanvasZoomBehavior(); // Add back zoom behavior to reenable canvas zooming
 			})
 			// Use mouse down instead of click because it gets called before drag start.
 			.on("mousedown", (d3Event, d) => {
 				this.logger.logStartTimer("Comment Group - mouse down");
+
 				d3Event.stopPropagation();
 				if (this.svgCanvasTextArea.isEditingText()) {
-					this.svgCanvasTextArea.completeEditing();
+					this.svgCanvasTextArea.completeEditing(d3Event);
 				}
 				if (!this.config.enableDragWithoutSelect) {
+					if (this.config.enableKeyboardNavigation) {
+						this.activePipeline.setTabGroupIndexForObj(d);
+						this.setFocusObject(d, d3Event);
+					}
 					this.selectObjectD3Event(d3Event, d, "comment");
 				}
 				this.logger.logEndTimer("Comment Group - mouse down");
@@ -3833,8 +4146,35 @@ export default class SVGCanvasRenderer {
 				if (this.config.enableDragWithoutSelect) {
 					this.selectObjectD3Event(d3Event, d, "comment");
 				}
+				this.setFocusObject(d, d3Event);
 				this.openContextMenu(d3Event, "comment", d);
 			});
+	}
+
+	// Returns true if the comment has scrollable text or not. That is if the contents
+	// of the comment's scroll <div> is bigger that the scroll <div> can accommodate.
+	// When a comment is being edited, it will have a foreignObject containing its own
+	// scroll <div> over the top of the foreignObject used to display the comment.
+	commentHasScrollableText(element) {
+		// Look for entry foreign object first because, if present it will be over the top
+		// of the display foreign object and it will be handling scrollable text.
+		let scrollDiv = element.getElementsByClassName("d3-comment-text-entry-scroll");
+		if (!scrollDiv[0]) {
+			scrollDiv = element.getElementsByClassName("d3-comment-text-scroll");
+		}
+		if (scrollDiv[0].clientHeight < scrollDiv[0].scrollHeight) {
+			return true;
+		}
+		return false;
+	}
+
+	// Scrolls the scrollable <div> in the comment in the d3Event.currentTarget field,
+	// by the amount (in pixels) passed in.
+	scrollComment(d3Event, yAmt) {
+		if (this.commentHasScrollableText(d3Event.currentTarget)) {
+			const scrollDiv = d3Event.currentTarget.getElementsByClassName("d3-comment-text-scroll");
+			scrollDiv[0].scrollBy(0, yAmt);
+		}
 	}
 
 	attachCommentSizingListeners(commentGrps) {
@@ -3842,7 +4182,7 @@ export default class SVGCanvasRenderer {
 			.on("mousedown", (d3Event, d) => {
 				this.dragObjectUtils.mouseDownCommentSizingArea();
 			})
-			// Use mousemove here rather than mouseenter so the cursor will change
+			// Use mousemove and mouseenter so the cursor will change
 			// if the pointer moves from one area of the node outline to another
 			// (eg. from east area to north-east area) without exiting the node outline.
 			// A mouseenter is triggered when the sizing operation stops and the
@@ -3896,7 +4236,7 @@ export default class SVGCanvasRenderer {
 
 	setCommentBodyStyles(d, type, comGrp) {
 		const style = this.getCommentBodyStyle(d, type);
-		comGrp.selectChildren(".d3-comment-rect").attr("style", style);
+		comGrp.selectChildren(".d3-comment-text").attr("style", style);
 	}
 
 	setCommentTextStyles(d, type, comGrp) {
@@ -3918,6 +4258,7 @@ export default class SVGCanvasRenderer {
 	}
 
 	displayCommentTextArea(comment, parentDomObj) {
+		comment.autoSize = this.canvasLayout.commentAutoSize; // TODO - read from comment layout when canvas layout is refactored.
 		this.svgCanvasTextArea.displayCommentTextArea(comment, parentDomObj);
 	}
 
@@ -4023,6 +4364,7 @@ export default class SVGCanvasRenderer {
 				(enter) => this.createLinks(enter)
 			)
 			.attr("class", (d) => this.getLinkGroupClass(d))
+			.attr("tabindex", (d) => (this.config.enableKeyboardNavigation ? -1 : null))
 			.attr("style", (d) => this.getLinkGrpStyle(d))
 			.attr("data-selected", (d) => (this.activePipeline.isSelected(d.id) ? true : null))
 			.call((joinedLinkGrps) => {
@@ -4034,7 +4376,8 @@ export default class SVGCanvasRenderer {
 	createLinks(enter) {
 		this.logger.logStartTimer("createLinks");
 		// Add groups for links
-		const newLinkGrps = enter.append("g")
+		const newLinkGrps = enter
+			.append("g")
 			.attr("data-id", (d) => this.getId("link_grp", d.id))
 			.call(this.attachLinkGroupListeners.bind(this));
 
@@ -4051,8 +4394,7 @@ export default class SVGCanvasRenderer {
 		// Add displayed link line arrow heads
 		newLinkGrps
 			.filter((d) => (d.type === NODE_LINK && this.canvasLayout.dataLinkArrowHead) ||
-											(d.type === COMMENT_LINK && this.canvasLayout.commentLinkArrowHead) ||
-											(d.type === NODE_LINK && this.canvasLayout.linkType === LINK_TYPE_STRAIGHT))
+							(d.type === COMMENT_LINK && this.canvasLayout.commentLinkArrowHead))
 			.append("path")
 			.attr("class", "d3-link-line-arrow-head");
 
@@ -4103,8 +4445,7 @@ export default class SVGCanvasRenderer {
 		// Update link line arrow head
 		joinedLinkGrps
 			.filter((d) => (d.type === NODE_LINK && this.canvasLayout.dataLinkArrowHead) ||
-											(d.type === COMMENT_LINK && this.canvasLayout.commentLinkArrowHead) ||
-											(d.type === NODE_LINK && this.canvasLayout.linkType === LINK_TYPE_STRAIGHT))
+							(d.type === COMMENT_LINK && this.canvasLayout.commentLinkArrowHead))
 			.selectAll(".d3-link-line-arrow-head")
 			.datum((d) => this.activePipeline.getLink(d.id))
 			.attr("d", (d) => this.getArrowHead(d))
@@ -4116,7 +4457,10 @@ export default class SVGCanvasRenderer {
 		joinedLinkGrps.each((d, i, linkGrps) => {
 			if (d.type === NODE_LINK || d.type === ASSOCIATION_LINK) {
 				const linkGrp = d3.select(linkGrps[i]).selectAll(".d3-link-decorations-group");
-				this.displayDecorations(d, DEC_LINK, linkGrp, d.decorations);
+				const decorations = this.shouldDisplayAltDecorations(d)
+					? this.canvasLayout.linkAltDecorations
+					: d.decorations;
+				this.displayDecorations(d, DEC_LINK, linkGrp, decorations);
 			}
 		});
 
@@ -4140,31 +4484,83 @@ export default class SVGCanvasRenderer {
 
 	attachLinkGroupListeners(linkGrps) {
 		linkGrps
-			.on("mousedown", (d3Event, d, index, links) => {
-				this.logger.log("Link Group - mouse down");
-				if (this.svgCanvasTextArea.isEditingText()) {
-					this.svgCanvasTextArea.completeEditing();
+			.on("keydown", (d3Event, d) => {
+				if (this.config.enableKeyboardNavigation) {
+					if (KeyboardUtils.nextObjectInGroup(d3Event)) {
+						if (d.type === NODE_LINK) {
+							const node = this.activePipeline.getNextNodeFromDataLink(d);
+							this.setFocusObject(node, d3Event);
+							CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+						} else if (d.type === ASSOCIATION_LINK) {
+							const node = this.activePipeline.getNextNodeFromAssocLink(d);
+							this.setFocusObject(node, d3Event);
+							CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+						} else if (d.type === COMMENT_LINK) {
+							const obj = this.activePipeline.getNextObjectFromCommentLink(d);
+							this.setFocusObject(obj, d3Event);
+							CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						}
+
+					} else if (KeyboardUtils.previousObjectInGroup(d3Event)) {
+						if (d.type === NODE_LINK) {
+							const node = this.activePipeline.getPreviousNodeFromDataLink(d);
+							this.setFocusObject(node, d3Event);
+
+						} else if (d.type === ASSOCIATION_LINK) {
+							const node = this.activePipeline.getPreviousNodeFromAssocLink(d);
+							this.setFocusObject(node, d3Event);
+
+						} else if (d.type === COMMENT_LINK) {
+							const obj = this.activePipeline.getPreviousObjectFromCommentLink(d);
+							this.setFocusObject(obj, d3Event);
+						}
+
+					} else if (KeyboardUtils.nextSiblingLink(d3Event)) {
+						const link = this.activePipeline.getNextSiblingLink(d);
+						this.setFocusObject(link, d3Event);
+
+					} else if (KeyboardUtils.previousSiblingLink(d3Event)) {
+						const link = this.activePipeline.getPreviousSiblingLink(d);
+						this.setFocusObject(link, d3Event);
+
+					} else if (KeyboardUtils.moveObjectLeft(d3Event)) {
+						// Prevent Chrome returning to previous browser page!
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+
+					} else if (KeyboardUtils.selectObject(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "link", false, false);
+
+					} else if (KeyboardUtils.selectObjectAugment(d3Event)) {
+						CanvasUtils.stopPropagationAndPreventDefault(d3Event);
+						this.selectObject(d3Event, d, "link", false, true);
+
+
+					} else if (KeyboardUtils.displayContextOptions(d3Event)) {
+						// Don't let keypress go through to the Canvas otherwise the
+						// canvas contenxt menu/toolbar will be opened.
+						d3Event.stopPropagation();
+
+						if (this.config.enableLinkSelection !== "None") {
+							this.selectObject(d3Event, d, "link");
+						}
+
+						if (this.config.enableContextToolbar) {
+							this.addContextToolbar(d3Event, d, "link", CAUSE_KEYBOARD,
+								this.canvasLayout.linkContextToolbarPosX,
+								this.canvasLayout.linkContextToolbarPosY
+							);
+
+						} else {
+							const pos = this.getObjectCenterPosition(d3Event.currentTarget);
+							this.openContextMenu(d3Event, "link", d, null, pos);
+						}
+					}
 				}
-				if (this.config.enableLinkSelection !== LINK_SELECTION_NONE) {
-					this.selectObjectD3Event(d3Event, d, "link");
-				}
-				d3Event.stopPropagation(); // Stop event going to canvas when enableEditingActions is false
 			})
-			.on("mouseup", () => {
-				this.logger.log("Link Group - mouse up");
-			})
-			.on("click", (d3Event, d) => {
-				this.logger.log("Link Group - click");
-				d3Event.stopPropagation();
-			})
-			.on("contextmenu", (d3Event, d) => {
-				this.logger.log("Link Group - context menu");
-				if (this.config.enableLinkSelection !== LINK_SELECTION_NONE) {
-					this.selectObjectD3Event(d3Event, d, "link");
-				}
-				this.openContextMenu(d3Event, "link", d);
-			})
-			.on("mouseenter", (d3Event, link) => {
+			.on("mouseenter", (d3Event, d) => {
 				if (this.isDragging()) {
 					return;
 				}
@@ -4174,11 +4570,15 @@ export default class SVGCanvasRenderer {
 				if (this.config.enableLinkSelection === LINK_SELECTION_HANDLES ||
 						this.config.enableLinkSelection === LINK_SELECTION_DETACHABLE) {
 					this.raiseLinkToTop(targetObj);
+					CanvasUtils.stopPropagationAndPreventDefault(d3Event);
 				}
-				this.setLinkLineStyles(targetObj, link, "hover");
+				this.setLinkLineStyles(targetObj, d, "hover");
 
 				if (this.config.enableContextToolbar) {
-					this.addContextToolbar(d3Event, link, "link");
+					this.addContextToolbar(d3Event, d, "link", CAUSE_MOUSE,
+						this.canvasLayout.linkContextToolbarPosX,
+						this.canvasLayout.linkContextToolbarPosY
+					);
 				}
 			})
 			// This will be called when the mouse cursor enters the link or moves out of
@@ -4206,8 +4606,11 @@ export default class SVGCanvasRenderer {
 			.on("mouseleave", (d3Event, link) => {
 				const targetObj = d3Event.currentTarget;
 
-				if (!targetObj.getAttribute("data-selected") && !this.config.enableLinksOverNodes) {
+				// isEditingText is used to check whether Label Decoration is in Edit Mode
+				// to avoid Decoration Textarea to be closed on mouseleave.
+				if (!targetObj.getAttribute("data-selected") && !this.config.enableLinksOverNodes && !this.isEditingText()) {
 					this.lowerLinkToBottom(targetObj);
+					CanvasUtils.stopPropagationAndPreventDefault(d3Event);
 				}
 				this.setLinkLineStyles(targetObj, link, "default");
 				this.canvasController.closeTip();
@@ -4215,7 +4618,40 @@ export default class SVGCanvasRenderer {
 				if (this.config.enableContextToolbar) {
 					this.removeContextToolbar();
 				}
+			})
+			.on("mousedown", (d3Event, d, index, links) => {
+				this.logger.log("Link Group - mouse down");
+				if (this.svgCanvasTextArea.isEditingText()) {
+					this.svgCanvasTextArea.completeEditing(d3Event);
+				}
+				if (this.config.enableKeyboardNavigation) {
+					this.activePipeline.setTabGroupIndexForObj(d);
+					this.setFocusObject(d, d3Event);
+				}
+				if (this.config.enableLinkSelection !== LINK_SELECTION_NONE) {
+					this.selectObjectD3Event(d3Event, d, "link");
+				}
+				d3Event.stopPropagation(); // Stop event going to canvas when enableEditingActions is false
+			})
+			.on("click", (d3Event, d) => {
+				this.logger.log("Link Group - click");
+				d3Event.stopPropagation();
+			})
+			.on("contextmenu", (d3Event, d) => {
+				this.logger.log("Link Group - context menu");
+				if (this.config.enableLinkSelection !== LINK_SELECTION_NONE) {
+					this.selectObjectD3Event(d3Event, d, "link");
+				}
+				this.setFocusObject(d, d3Event);
+				this.openContextMenu(d3Event, "link", d);
 			});
+	}
+
+	// Returns true if the alternative decorations for the link line
+	// should be displayed.
+	shouldDisplayAltDecorations(link) {
+		return (this.canvasLayout.linkAltDecorations &&
+			CanvasUtils.getLinkDistance(link) < this.canvasLayout.linkDistanceForAltDecorations);
 	}
 
 	// Creates a new start handle and a new end handle for the link groups
@@ -4388,7 +4824,7 @@ export default class SVGCanvasRenderer {
 		// If the comment has a classname that isn't the default use it!
 		if (d.class_name &&
 				d.class_name !== "canvas-comment" &&
-				d.class_name !== "d3-comment-rect") {
+				d.class_name !== "d3-comment-rect") { // Left in for historical reasons
 			customClass = " " + d.class_name;
 		}
 
@@ -4446,7 +4882,7 @@ export default class SVGCanvasRenderer {
 	}
 
 	// Raises the node, specified by the node ID, above other nodes and objects.
-	// Called by external utils.
+	// Called by svg-canvas-utils-external.js for use by apps using React nodes.
 	raiseNodeToTopById(nodeId) {
 		this.getNodeGroupSelectionById(nodeId).raise();
 	}
@@ -4461,7 +4897,7 @@ export default class SVGCanvasRenderer {
 	// * There are one or more selected links
 	// * We are editing text
 	// * The app has indicated links should be displayed over nodes
-	raiseNodeToTop(nodeGrp) {
+	raiseNodeToTop(nodeGrp, d3Event) {
 		if (this.config.enableRaiseNodesToTopOnHover &&
 			!this.isDragging() &&
 			this.activePipeline.getSelectedLinksCount() === 0 &&
@@ -4482,13 +4918,17 @@ export default class SVGCanvasRenderer {
 	}
 
 	raiseLinkToTop(obj) {
+		// Add handles-detachable-hover class to avoid firefox hover issue
 		d3.select(obj)
-			.raise();
+			.raise()
+			.classed("handles-detachable-hover", true);
 	}
 
 	lowerLinkToBottom(obj) {
+		// Remove handles-detachable-hover class to avoid firefox hover issue
 		d3.select(obj)
-			.lower();
+			.lower()
+			.classed("handles-detachable-hover", false);
 	}
 
 	// Returns true if the link passed in has one or more decorations.
@@ -4496,13 +4936,42 @@ export default class SVGCanvasRenderer {
 		return link.decorations && link.decorations.length > 0;
 	}
 
+	// Returns an array of links taken from the active pipeline, that contain
+	// additional fields to describe how the link line should be drawn.
+	// Additional fields
+	// -----------------
+	// These are added by the updateFreeformLinksForNodes function:
+	// srcFreeformInfo - Added for freeform links. Indicates the starting point of the
+	//                   link line used so the starts don't bunch up together if more
+	//                   than one link enters or exits on one side of the node.
+	// trgFreeformInfo - Added for freeform links. Indicates the ending point of the
+	//                   link line used so the ends don't bunch up together if more
+	//                   than one link enters or exists on one side of the node.
+	//
+	// These are added by the getAttachedLinkObj and getDetachedLinkObj functions:
+	// x1 and y1           - Coordinates of the start of the line
+	// x2 and y2           - Coordinates of the end of the line
+	// coordsUpdated       - A booelan - true means the cordinates are different to before.
+	//                       Used for performance to prevent unneccessary line drawing.
+	// srcDir              - Direction ("n", "s", "e" or "W") of the source of the line
+	// trgDir              - Direction ("n", "s", "e" or "W") of the target of the line
+	// originX and originY - The theoretical origin in the source node of the line
+	// assocLinkVariation  - Either "curveRight", "curveLeft" or "doubleBack". Indicates
+	//                       the style used for drawing association links
+	//
+	// These fields are added by the addConnectionPaths function:
+	// pathinfo - an object containing:
+	//   - elements    - An array of elements that make up the path of the link line
+	//   - path        - The SVG path used to draw the link line
+	//   - centerPoint - The x,y cordinate of the center of the link line. Used for
+	//                   positioning decorations and the context toolbar.
 	buildLinksArray() {
 		this.logger.logStartTimer("buildLinksArray");
 
 		let linksArray = [];
 
-		if (this.canvasLayout.linkType === LINK_TYPE_STRAIGHT) {
-			this.updateLinksForNodes();
+		if (this.canvasLayout.linkMethod === LINK_METHOD_FREEFORM) {
+			this.updateFreeformLinksForNodes();
 		}
 
 		this.activePipeline.links.forEach((link) => {
@@ -4512,10 +4981,10 @@ export default class SVGCanvasRenderer {
 					this.dragDetLinkUtils.isLinkBeingDragged(link)) ||
 					this.config.enableLinkSelection === LINK_SELECTION_DETACHABLE) &&
 					(!link.srcObj || !link.trgNode)) {
-				linkObj = this.getDetachedLineObj(link);
+				linkObj = this.getDetachedLinkObj(link);
 
 			} else {
-				linkObj = this.getAttachedLineObj(link);
+				linkObj = this.getAttachedLinkObj(link);
 			}
 			if (linkObj) {
 				linksArray.push(linkObj);
@@ -4536,7 +5005,10 @@ export default class SVGCanvasRenderer {
 		return linksArray;
 	}
 
-	getAttachedLineObj(link) {
+	// Returns the link object passed in with additional fields to descibe an fully
+	// attached link. This is called when both srcNode AND trgNode set to node
+	// objects indicating a link that is attached at the source and taget ends.
+	getAttachedLinkObj(link) {
 		const srcObj = link.srcObj;
 		const trgNode = link.trgNode;
 
@@ -4555,8 +5027,8 @@ export default class SVGCanvasRenderer {
 		// Only proceed if we have a source and a target node/comment and the
 		// conditions are right for displaying the link.
 		if (srcObj && trgNode && this.shouldDisplayLink(srcObj, trgNode, link.type)) {
-			const srcPortId = this.getSourcePortId(link, srcObj);
-			const trgPortId = this.getTargetPortId(link, trgNode);
+			const srcPortId = CanvasUtils.getSourcePortId(link, srcObj);
+			const trgPortId = CanvasUtils.getTargetPortId(link, trgNode);
 			const assocLinkVariation =
 				link.type === ASSOCIATION_LINK && this.config.enableAssocLinkType === ASSOC_RIGHT_SIDE_CURVE
 					? this.getAssocLinkVariation(srcObj, trgNode)
@@ -4577,65 +5049,68 @@ export default class SVGCanvasRenderer {
 			link.y2 = coords.y2;
 			link.originX = coords.originX;
 			link.originY = coords.originY;
+			link.srcDir = coords.srcDir;
+			link.trgDir = coords.trgDir;
+
 			return link;
 		}
 		return null;
 	}
 
-	// Returns a line object describing the detached (or semi-detached) link
-	// passed in. This will only ever be called when either srcNode OR trgNode
-	// are null (indicating a semi-detached link) or when both are null indicating
-	// a fully-detached link.
-	getDetachedLineObj(link) {
+	// Returns the link object passed in with additional fields to describe
+	// a fully-detached or semi-detached link. This will only ever
+	// be called when either srcNode OR trgNode are null indicating a
+	// semi-detached link, or when both are null, indicating a fully-detached link.
+	getDetachedLinkObj(link) {
 		const srcObj = link.srcObj;
 		const trgNode = link.trgNode;
 
-		let srcPortId = null;
-		let trgPortId = null;
-		const coords = {};
+		const coords = { x1: link.x1, y1: link.y1, x2: link.x2, y2: link.y2 };
 
-		if (!srcObj) {
-			coords.x1 = link.srcPos.x_pos;
-			coords.y1 = link.srcPos.y_pos;
+		// Fully-detached link.
+		if (!srcObj && !trgNode) {
+			link.x1 = link.srcPos.x_pos;
+			link.y1 = link.srcPos.y_pos;
+			link.x2 = link.trgPos.x_pos;
+			link.y2 = link.trgPos.y_pos;
+			link.originX = 0;
+			link.originY = 0;
 
-		} else {
-			if (this.canvasLayout.linkType === LINK_TYPE_STRAIGHT) {
-				const endPos = { x: link.trgPos.x_pos, y: link.trgPos.y_pos };
-				const startPos = this.linkUtils.getNewStraightNodeLinkStartPos(srcObj, endPos, link.srcOriginInfo);
-				coords.x1 = startPos.x;
-				coords.y1 = startPos.y;
-				coords.originX = startPos.originX;
-				coords.originY = startPos.originY;
-
+			if (this.canvasLayout.linkMethod === LINK_METHOD_FREEFORM) {
+				link.srcDir = CanvasUtils.getPortDir((link.x2 - link.x1), (link.y2 - link.y1), { width: 10, height: 10, }); // Pass in a dummy node
+				link.trgDir = this.reverseDir(link.srcDir);
 			} else {
-				srcPortId = this.getSourcePortId(link, srcObj);
-				const port = this.getOutputPort(srcObj, srcPortId);
-				if (port) {
-					coords.x1 = srcObj.x_pos + port.cx;
-					coords.y1 = srcObj.y_pos + port.cy;
-				}
+				link.srcDir = this.getDefaultSrcDirForPorts();
+				link.trgDir = this.reverseDir(link.srcDir);
 			}
-		}
 
-		if (!trgNode) {
-			coords.x2 = link.trgPos.x_pos;
-			coords.y2 = link.trgPos.y_pos;
+		// Semi-detached at source end.
+		} else if (trgNode) {
+			const trgInfo = this.getTargetEndInfo(link, trgNode);
 
+			link.x1 = link.srcPos.x_pos;
+			link.y1 = link.srcPos.y_pos;
+			link.x2 = trgInfo.x2;
+			link.y2 = trgInfo.y2;
+			link.trgDir = trgInfo.trgDir;
+			link.originX = 0;
+			link.originY = 0;
+
+			link.srcDir = this.getSrcDirForDetachedLink(link, link.x1, link.y1);
+
+		// Semi-detached at target end.
 		} else {
-			if (this.canvasLayout.linkType === LINK_TYPE_STRAIGHT) {
-				const endPos = { x: link.srcPos.x_pos, y: link.srcPos.y_pos };
-				const startPos = this.linkUtils.getNewStraightNodeLinkStartPos(trgNode, endPos, link.trgOriginInfo);
-				coords.x2 = startPos.x;
-				coords.y2 = startPos.y;
+			const srcInfo = this.getSourceEndInfo(link, srcObj);
 
-			} else {
-				trgPortId = this.getTargetPortId(link, trgNode);
-				const port = this.getInputPort(trgNode, trgPortId);
-				if (port) {
-					coords.x2 = trgNode.x_pos + port.cx;
-					coords.y2 = trgNode.y_pos + port.cy;
-				}
-			}
+			link.x1 = srcInfo.x1;
+			link.y1 = srcInfo.y1;
+			link.x2 = link.trgPos.x_pos;
+			link.y2 = link.trgPos.y_pos;
+			link.srcDir = srcInfo.srcDir;
+			link.originX = srcInfo.originX;
+			link.originY = srcInfo.originY;
+
+			link.trgDir = this.getTrgDirForDetachedLink(link, link.x2, link.y2);
 		}
 
 		// Set additional calculated fields on link object.
@@ -4645,56 +5120,160 @@ export default class SVGCanvasRenderer {
 			link.x2 !== coords.x2 ||
 			link.y2 !== coords.y2;
 
-		link.x1 = coords.x1;
-		link.y1 = coords.y1;
-		link.x2 = coords.x2;
-		link.y2 = coords.y2;
-		link.originX = coords.originX;
-		link.originY = coords.originY;
-
 		return link;
 	}
 
-	getOutputPort(srcNode, srcPortId) {
-		if (srcNode && srcNode.outputs) {
-			return srcNode.outputs.find((p) => p.id === srcPortId);
-		}
-		return null;
-	}
+	// Returns an info object for the source end of the link, with:
+	// x1 and y1 - Coordinate of the start of the link line.
+	// srcDir - Direction ("n", "s", "e" or "w") the link line should be drawn.
+	// originX and originY = The theoretical start point of the link line from.
+	getSourceEndInfo(link, srcObj) {
+		const info = {};
 
-	getInputPort(trgNode, trgPortId) {
-		if (trgNode && trgNode.inputs) {
-			return trgNode.inputs.find((p) => p.id === trgPortId);
-		}
-		return null;
-	}
+		if (this.canvasLayout.linkMethod === LINK_METHOD_FREEFORM) {
+			const endPos = { x: link.trgPos.x_pos, y: link.trgPos.y_pos };
+			const startPos = this.linkUtils.getNewFreeformNodeLinkStartPos(srcObj, endPos, link.srcFreeformInfo);
+			info.x1 = startPos.x;
+			info.y1 = startPos.y;
+			info.originX = startPos.originX;
+			info.originY = startPos.originY;
+			info.srcDir = startPos.dir;
 
-	// Returns a source port Id if one exists in the link, otherwise defaults
-	// to the first available port on the source node.
-	getSourcePortId(link, srcNode) {
-		var srcPortId;
-		if (link.srcNodePortId) {
-			srcPortId = link.srcNodePortId;
-		} else if (srcNode.outputs && srcNode.outputs.length > 0) {
-			srcPortId = srcNode.outputs[0].id;
 		} else {
-			srcPortId = null;
+			const srcPortId = CanvasUtils.getSourcePortId(link, srcObj);
+			let port = CanvasUtils.getOutputPort(srcPortId, srcObj);
+			// If no port, we must be handling a new association link being drawn from an input port.
+			if (!port) {
+				port = CanvasUtils.getInputPort(srcPortId, srcObj);
+			}
+
+			if (port) {
+				info.x1 = srcObj.x_pos + port.cx;
+				info.y1 = srcObj.y_pos + port.cy;
+				info.srcDir = port.dir;
+			}
 		}
-		return srcPortId;
+		return info;
 	}
 
-	// Returns a target port Id if one exists in the link, otherwise defaults
-	// to the first available port on the target node.
-	getTargetPortId(link, trgNode) {
-		var trgPortId;
-		if (link.trgNodePortId) {
-			trgPortId = link.trgNodePortId;
-		} else if (trgNode.inputs && trgNode.inputs.length > 0) {
-			trgPortId = trgNode.inputs[0].id;
+	// Returns an info object for the target end of the link, with:
+	// x1 and y1 - Coordinate of the end of the link line.
+	// srcDir - Direction ("n", "s", "e" or "w") the link line should be drawn to.
+	getTargetEndInfo(link, trgNode) {
+		const info = {};
+
+		if (this.canvasLayout.linkMethod === LINK_METHOD_FREEFORM) {
+			const endPos = { x: link.srcPos.x_pos, y: link.srcPos.y_pos };
+			const startPos = this.linkUtils.getNewFreeformNodeLinkStartPos(trgNode, endPos, link.trgFreeformInfo);
+			info.x2 = startPos.x;
+			info.y2 = startPos.y;
+			info.trgDir = startPos.dir;
+
 		} else {
-			trgPortId = null;
+			const trgPortId = CanvasUtils.getTargetPortId(link, trgNode);
+			const port = CanvasUtils.getInputPort(trgPortId, trgNode);
+			if (port) {
+				info.x2 = trgNode.x_pos + port.cx;
+				info.y2 = trgNode.y_pos + port.cy;
+				info.trgDir = port.dir;
+			}
 		}
-		return trgPortId;
+		return info;
+	}
+
+	// Returns a default source direction.
+	getDefaultSrcDirForPorts() {
+		if (this.canvasLayout.linkDirection === LINK_DIR_LEFT_RIGHT) {
+			return EAST;
+
+		} else if (this.canvasLayout.linkDirection === LINK_DIR_RIGHT_LEFT) {
+			return WEST;
+
+		} else if (this.canvasLayout.linkDirection === LINK_DIR_BOTTOM_TOP) {
+			return NORTH;
+
+		} else if (this.canvasLayout.linkDirection === LINK_DIR_TOP_BOTTOM) {
+			return SOUTH;
+		}
+		return EAST;
+	}
+
+	// Returns a direction ("n", "s", "e" or "w") for the source end of a detached link.
+	getSrcDirForDetachedLink(link, x, y) {
+		if (link.trgNode) {
+			if (this.canvasLayout.linkMethod === LINK_METHOD_PORTS) {
+				// If we have a trgDir and it fits with the linkDirection currently employed we
+				// can set the srcDir accordingly. These will be the default cases for ports that
+				// are positioned based on link direction.
+				if (link.trgDir === WEST && this.canvasLayout.linkDirection === LINK_DIR_LEFT_RIGHT) {
+					return EAST;
+
+				} else if (link.trgDir === EAST && this.canvasLayout.linkDirection === LINK_DIR_RIGHT_LEFT) {
+					return WEST;
+
+				} else if (link.trgDir === SOUTH && this.canvasLayout.linkDirection === LINK_DIR_BOTTOM_TOP) {
+					return NORTH;
+
+				} else if (link.trgDir === NORTH && this.canvasLayout.linkDirection === LINK_DIR_TOP_BOTTOM) {
+					return SOUTH;
+				}
+			}
+
+			// If the trgDir does not fit with one of the link directions then the trgDir
+			// is associated with a port that is in a custom position. In that case, calculate
+			// the srcDir based on the coordinates of the target point in relation to the trgNode.
+			const srcDir = CanvasUtils.getPortDir((x - link.trgNode.x_pos), (y - link.trgNode.y_pos), link.trgNode);
+			return this.reverseDir(srcDir);
+		}
+		// If there is no target node then this is a fully detached link so set the source
+		// direction based on the position relative to the target.
+		const dir = CanvasUtils.getPortDir((x - link.trgPos.x_pos), (y - link.trgPos.y_pos), { width: 10, height: 10, }); // Pass in a dummy node
+		return this.reverseDir(dir);
+	}
+
+	// Returns a direction ("n", "s", "e" or "w") for the target end of a detached link.
+	getTrgDirForDetachedLink(link, x, y) {
+		if (link.srcObj) {
+			if (this.canvasLayout.linkMethod === LINK_METHOD_PORTS) {
+				// If there is a srcDir for the link we return a trgDir if the srcDir matches the
+				// linkDirection (port placement) currently in use.
+				if (link.srcDir === EAST && this.canvasLayout.linkDirection === LINK_DIR_LEFT_RIGHT) {
+					return WEST;
+
+				} else if (link.srcDir === WEST && this.canvasLayout.linkDirection === LINK_DIR_RIGHT_LEFT) {
+					return EAST;
+
+				} else if (link.srcDir === NORTH && this.canvasLayout.linkDirection === LINK_DIR_BOTTOM_TOP) {
+					return SOUTH;
+
+				} else if (link.srcDir === SOUTH && this.canvasLayout.linkDirection === LINK_DIR_TOP_BOTTOM) {
+					return NORTH;
+				}
+			}
+
+			// If the srcDir does not fit with one of the link directions then the srcDir
+			// is associated with a port that is in a custom position. In that case, calculate
+			// the trgDir based on the coordinates of the target point in relation to the srcObj.
+			const srcDir = CanvasUtils.getPortDir((x - link.srcObj.x_pos), (y - link.srcObj.y_pos), link.srcObj);
+			return this.reverseDir(srcDir);
+		}
+		const dir = CanvasUtils.getPortDir((x - link.srcPos.x_pos), (y - link.srcPos.y_pos), { width: 10, height: 10, }); // Pass in a dummy node
+		return this.reverseDir(dir);
+	}
+
+	// Returns the reverse of the direction passed in.
+	reverseDir(dir) {
+		switch (dir) {
+		case NORTH:
+			return SOUTH;
+		case SOUTH:
+			return NORTH;
+		case EAST:
+			return WEST;
+		case WEST:
+		default:
+			return EAST;
+		}
 	}
 
 	// Returns true if a link should be displayed and false if not. The link
@@ -4817,19 +5396,19 @@ export default class SVGCanvasRenderer {
 	}
 
 	// Updates the data links for all the nodes with two optional fields
-	// (called srcOriginInfo and trgOriginInfo) based on the location of the
+	// (called srcFreeformInfo and trgFreeformInfo) based on the location of the
 	// nodes the links go from and to. The info in these fields is used to
-	// calculate the starting and ending position of straight line links.
+	// calculate the starting and ending position of freeform link lines.
 	// This ensures that input and output links that go in a certain direction
 	// (NORTH, SOUTH, EAST or WEST) are grouped together so they can be
-	// separated out when straight lines are drawn between nodes.
-	updateLinksForNodes() {
-		this.activePipeline.nodes.forEach((n) => this.updateLinksForNode(n));
+	// separated out when freeform lines are drawn between nodes.
+	updateFreeformLinksForNodes() {
+		this.activePipeline.nodes.forEach((n) => this.updateFreeformLinksForNode(n));
 	}
 
 	// Updates the links going into and out of the node passed in with up to
-	// two new fields (called srcOriginInfo and trgOriginInfo).
-	updateLinksForNode(node) {
+	// two new fields (called srcFreeformInfo and trgFreeformInfo).
+	updateFreeformLinksForNode(node) {
 		const linksInfo = {};
 		linksInfo.n = [];
 		linksInfo.s = [];
@@ -4839,10 +5418,16 @@ export default class SVGCanvasRenderer {
 		// Update the linksInfo arrays for each direction: n, s, e and w.
 		this.activePipeline.links.forEach((link) => {
 			if (link.type === NODE_LINK) {
-				if (link.trgNode && link.trgNode.id === node.id) {
+				// Self-referencing link
+				if (node.id === link.srcObj?.id &&
+						link.srcObj?.id === link.trgNode?.id) {
+					linksInfo[NORTH].push({ type: "in", startNode: link.srcObj, endNode: link.trgNode, link });
+					linksInfo[EAST].push({ type: "out", startNode: link.srcObj, endNode: link.trgNode, link });
+
+				} else if (link.trgNode && link.trgNode.id === node.id) {
 					if (link.srcObj) {
-						const dir = this.getDirAdjusted(link.trgNode, link.srcObj);
-						linksInfo[dir].push({ type: "in", endNode: link.srcObj, link });
+						const dir = this.getDirToNode(link.trgNode, link.srcObj);
+						linksInfo[dir].push({ type: "in", startNode: link.trgNode, endNode: link.srcObj, link });
 
 					} else if (link.srcPos) {
 						const dir = this.getDirToEndPos(link.trgNode, link.srcPos.x_pos, link.srcPos.y_pos);
@@ -4851,8 +5436,8 @@ export default class SVGCanvasRenderer {
 
 				} else if (link.srcObj && link.srcObj.id === node.id) {
 					if (link.trgNode) {
-						const dir = this.getDirAdjusted(link.srcObj, link.trgNode);
-						linksInfo[dir].push({ type: "out", endNode: link.trgNode, link });
+						const dir = this.getDirToNode(link.srcObj, link.trgNode);
+						linksInfo[dir].push({ type: "out", startNode: link.srcObj, endNode: link.trgNode, link });
 
 					} else if (link.trgPos) {
 						const dir = this.getDirToEndPos(link.srcObj, link.trgPos.x_pos, link.trgPos.y_pos);
@@ -4862,40 +5447,20 @@ export default class SVGCanvasRenderer {
 			}
 		});
 
-		linksInfo.n = this.sortLinksInfo(linksInfo.n, NORTH);
-		linksInfo.s = this.sortLinksInfo(linksInfo.s, SOUTH);
-		linksInfo.e = this.sortLinksInfo(linksInfo.e, EAST);
-		linksInfo.w = this.sortLinksInfo(linksInfo.w, WEST);
+		const startCenter = {
+			x: node.x_pos + node.width / 2,
+			y: node.y_pos + node.height / 2
+		};
+
+		linksInfo.n = this.sortLinksInfo(linksInfo.n, NORTH, startCenter);
+		linksInfo.s = this.sortLinksInfo(linksInfo.s, SOUTH, startCenter);
+		linksInfo.e = this.sortLinksInfo(linksInfo.e, EAST, startCenter);
+		linksInfo.w = this.sortLinksInfo(linksInfo.w, WEST, startCenter);
 
 		this.updateLinksInfo(linksInfo.n, NORTH);
 		this.updateLinksInfo(linksInfo.s, SOUTH);
 		this.updateLinksInfo(linksInfo.e, EAST);
 		this.updateLinksInfo(linksInfo.w, WEST);
-	}
-
-	// Returns the direction of a link from the start node to the end node
-	// as either NORTH, SOUTH, EAST or WEST. Some direction combinations
-	// have to be overriden to prevent link lines overlapping.
-	getDirAdjusted(startNode, endNode) {
-		let dir = this.getDirToNode(startNode, endNode);
-
-		// When start -> end is SOUTH and end -> start is WEST the returned direction
-		// becomes EAST instead of SOUTH to prevent link lines overlapping.
-		if (dir === SOUTH) {
-			const dir2 = this.getDirToNode(endNode, startNode);
-			if (dir2 === WEST) {
-				dir = EAST;
-			}
-
-		// When start -> end is NORTH and end -> start is EAST the returned direction
-		// becomes WEST instead of NORTH to prevent link lines overlapping.
-		} else if (dir === NORTH) {
-			const dir2 = this.getDirToNode(endNode, startNode);
-			if (dir2 === EAST) {
-				dir = WEST;
-			}
-		}
-		return dir;
 	}
 
 	// Returns the direction (NORTH, SOUTH, EAST or WEST) from the start node
@@ -4921,10 +5486,13 @@ export default class SVGCanvasRenderer {
 	}
 
 	// Returns the linksDirArray passed in with the linkInfo objects in the
-	// array ordered by the position of the end of each link line, depending on
-	// the direction (dir) of the lines. This is achieved by spliting the links
-	// into groups where links in the same group go to/from the same node.
-	sortLinksInfo(linksDirArrayIn, dir) {
+	// array ordered by the angle that each link makes with the center of the
+	// start node. When handling multiple links that go to the same node
+	// the links have to be grouped where links in the same group go to/from
+	// the same node. For groups, the x and y are *projected* corrdinates to
+	// allow us to calculate the angles and ordering etc. The actual x and y
+	// for the links is calculated in getAttachedLinkObj and getDetachedLinkObj.
+	sortLinksInfo(linksDirArrayIn, dir, startCenter) {
 		let linksDirArray = linksDirArrayIn;
 		if (linksDirArray.length > 1) {
 			const groups = this.getLinkInfoGroups(linksDirArray);
@@ -4941,23 +5509,72 @@ export default class SVGCanvasRenderer {
 						li.x = this.nodeUtils.getNodeCenterPosX(node);
 						li.y = node.y_pos + ((node.height / parts) * (i + 1));
 					}
+					// Special case where links that go SOUTH from the node and
+					// point to the WEST of the end node, get crossed over each other.
+					// In this case the x coordinates of the link items need to be
+					// reversed.
+					if (dir === SOUTH) {
+						const reverseDir = this.getDirToNode(li.endNode, li.startNode);
+						if (reverseDir === WEST) {
+							li.x = node.x_pos + ((node.width / parts) * (group.length - i));
+						}
+					}
+					// Special case where links that go NORTH from the node and
+					// point to the EAST of the end node, get crossed over each other.
+					// In this case the x coordinates of the link items need to be
+					// reversed.
+					if (dir === NORTH) {
+						const reverseDir = this.getDirToNode(li.endNode, li.startNode);
+						if (reverseDir === EAST) {
+							li.x = node.x_pos + ((node.width / parts) * (group.length - i));
+						}
+					}
 				});
 			});
 
-			// For NORTH and SOUTH links we sort linksDirArray by the x coordinate
-			// of the end of each link. For EAST and WEST we sort by the y
-			// coordinate.
-			if (dir === NORTH || dir === SOUTH) {
-				linksDirArray = linksDirArray.sort((a, b) => (a.x > b.x ? 1 : -1));
+			// Set an angle for each linkDir so that they can be sorted so they do not
+			// overlap when being drawn to or from the node. The angle is from the
+			// center of the node we are handling to their projected end point.
+			linksDirArray.forEach((ld) => {
+				ld.angle = CanvasUtils.calculateAngle(startCenter.x, startCenter.y, ld.x, ld.y);
+
+				// Make sure the angles for links on the EAST side of the node are
+				// increasing in the clockwise direction by decrementing the angles from
+				// 270 to 360 by 360 degrees. (This is because calculateAngle returns
+				// positive angles from the 3 o'clock position in clockwise direction.)
+				if (dir === EAST && ld.angle >= 270) {
+					ld.angle -= 360;
+				}
+
+				// For self-referencing links we overwrite the angle to ensure that
+				// the outward direction (EAST) is always drawn at the top of any
+				// EAST links and the inward direction (NORTH) is always drawn to
+				// the right of any NORTH links.
+				if (ld.startNode && ld.endNode && ld.startNode === ld.endNode) {
+					if (dir === EAST) {
+						ld.angle = -90;
+					} else if (dir === NORTH) {
+						ld.angle = 360;
+					}
+				}
+			});
+
+			// Sort the linksDirArray by the angle that each link forms with the
+			// center of the start node.
+			if (dir === NORTH || dir === EAST) {
+				linksDirArray = linksDirArray.sort((a, b) => (a.angle > b.angle ? 1 : -1));
 			} else {
-				linksDirArray = linksDirArray.sort((a, b) => (a.y > b.y ? 1 : -1));
+				linksDirArray = linksDirArray.sort((a, b) => (a.angle < b.angle ? 1 : -1));
 			}
 		}
 		return linksDirArray;
 	}
 
-	// Returns a 'groups' object where each field is index by a node ID and
-	// contains an array of linkInfo objects that go to/from the node.
+	// Returns a 'groups' object where each field is indexed by a node ID and
+	// contains an array of linkInfo objects that go to/from the node. Note:
+	// endNode is the target node for link that point away from the node we
+	// are handling and is the source node for links the point to the node
+	// we are handling.
 	getLinkInfoGroups(linksDirArray) {
 		const groups = {};
 		linksDirArray.forEach((li) => {
@@ -4979,13 +5596,13 @@ export default class SVGCanvasRenderer {
 	updateLinksInfo(linksDirArray, dir) {
 		linksDirArray.forEach((li, i) => {
 			if (li.type === "out") {
-				li.link.srcOriginInfo = {
+				li.link.srcFreeformInfo = {
 					dir: dir,
 					idx: i,
 					len: linksDirArray.length
 				};
 			} else {
-				li.link.trgOriginInfo = {
+				li.link.trgFreeformInfo = {
 					dir: dir,
 					idx: i,
 					len: linksDirArray.length
@@ -5034,8 +5651,8 @@ export default class SVGCanvasRenderer {
 
 	// Returns the transform to position and, if ncessecary, rotate the port
 	// circle arrow.
-	getPortArrowPathTransform(port) {
-		const angle = this.getAngleBasedOnLinkDirection();
+	getInputPortArrowPathTransform(port) {
+		const angle = this.getAngleBasedForInputPorts(port.dir);
 		return `translate(${port.cx}, ${port.cy}) rotate(${angle})`;
 	}
 
@@ -5060,30 +5677,76 @@ export default class SVGCanvasRenderer {
 	// the elbow lines. Otherwise it returns an angle so the arrow head is
 	// relevant to the slope of the straight link being drawn.
 	// TODO -- This doesn't handle "Curve" link types very well (in fact for
-	// curves it returns the same as for "Straight" links) becauset it is very
+	// curves it returns the same as for "Straight" links) because it is very
 	// difficult to write an algorithm that gives the correct angle for a
 	// "Curve" link to make it look presentable. I know, I tried!
-	getArrowHeadTransform(d) {
-		const angle =
-			this.canvasLayout.linkType === LINK_TYPE_ELBOW ||
-			this.canvasLayout.linkType === LINK_TYPE_CURVE
-				? this.getAngleBasedOnLinkDirection()
-				: Math.atan2((d.y2 - d.y1), (d.x2 - d.x1)) * (180 / Math.PI);
+	getArrowHeadTransform(link) {
+		let angle = 0;
 
-		return `translate(${d.x2}, ${d.y2}) rotate(${angle})`;
+		if (this.canvasLayout.linkMethod === LINK_METHOD_FREEFORM) {
+			angle = this.getAngleBasedForFreeformLink(link);
+
+		} else {
+			angle = this.getAngleBasedForInputPorts(link.trgDir);
+		}
+
+		return `translate(${link.x2}, ${link.y2}) rotate(${angle})`;
 	}
 
-	// Returns the angle for the arrow head when perpndicular arrows are in
-	// us such as when a the link type is "Elbow" or when we are displaying an
-	// arrow head inside a port circle.
-	getAngleBasedOnLinkDirection() {
-		if (this.canvasLayout.linkDirection === LINK_DIR_TOP_BOTTOM) {
-			return NINETY_DEGREES;
+	// Returns a rotation transform for an image displayed for an
+	// output port.
+	getPortImageTransform(port) {
+		const angle = this.getAngleBasedForOutputPorts(port.dir);
 
-		} else if (this.canvasLayout.linkDirection === LINK_DIR_BOTTOM_TOP) {
+		return `rotate(${angle},${port.cx},${port.cy})`;
+	}
+
+	// Returns the angle for the arrow head for freeform links.
+	getAngleBasedForFreeformLink(d) {
+		const selfRefLink = d.srcNodeId && d.trgNodeId && d.srcNodeId === d.trgNodeId;
+		if (this.canvasLayout.linkType === LINK_TYPE_STRAIGHT && !selfRefLink) {
+			return Math.atan2((d.y2 - d.y1), (d.x2 - d.x1)) * (180 / Math.PI);
+		}
+
+		// For other freeform link types we return an appropriate direction
+		// at right angles to the node.
+		return this.getAngleBasedForInputPorts(d.trgDir);
+	}
+
+	// Returns the angle for the output port of a source node when
+	// connections to ports are being made.
+	getAngleBasedForOutputPorts(dir) {
+		switch (dir) {
+		case NORTH: {
 			return -NINETY_DEGREES;
 		}
-		return 0;
+		case SOUTH: {
+			return NINETY_DEGREES;
+		}
+		case WEST: {
+			return ONE_EIGHTY_DEGREES;
+		}
+		default:
+			return 0;
+		}
+	}
+
+	// Returns the angle for the input port of a target node when
+	// connections to ports are being made.
+	getAngleBasedForInputPorts(dir) {
+		switch (dir) {
+		case NORTH: {
+			return NINETY_DEGREES;
+		}
+		case SOUTH: {
+			return -NINETY_DEGREES;
+		}
+		case WEST: {
+			return 0;
+		}
+		default:
+			return ONE_EIGHTY_DEGREES;
+		}
 	}
 
 	canOpenTip(tipType) {
@@ -5131,5 +5794,103 @@ export default class SVGCanvasRenderer {
 			str += " None";
 		}
 		return str;
+	}
+
+	focusNextTabGroup(evt) {
+		const nextObj = this.activePipeline.getNextTabGroupStartObject();
+		if (nextObj) {
+			this.setFocusObject(nextObj, evt);
+			return true;
+		}
+		return false;
+	}
+
+	focusPreviousTabGroup(evt) {
+		const previousObj = this.activePipeline.getPreviousTabGroupStartObject();
+		if (previousObj) {
+			this.setFocusObject(previousObj, evt);
+			return true;
+		}
+		return false;
+	}
+
+	setFocusObject(focusObj, evt) {
+		if (!this.config.enableKeyboardNavigation) {
+			return;
+		}
+
+		CanvasUtils.stopPropagationAndPreventDefault(evt);
+
+		this.canvasController.setFocusObject(focusObj);
+	}
+
+	restoreFocus() {
+		if (!this.canvasController.isContextMenuDisplayed()) {
+			this.canvasController.restoreFocus();
+		}
+	}
+
+	focusOnTextEntryElement(evt) {
+		this.svgCanvasTextArea.focusOnTextEntryElement(evt);
+	}
+
+	resetTabObjectIndex() {
+		this.activePipeline.resetTabObjectIndex();
+	}
+
+	// Moves the visual focus onto the object provided and
+	// uses zoom-to-reveal to bring the focused object into the
+	// viewport if it is not already.
+	// This is a utility method called from the canvas controller.
+	moveFocusTo(obj) {
+		if (!obj || obj === CANVAS_FOCUS) {
+			return;
+		}
+
+		const type = CanvasUtils.getObjectTypeName(obj);
+
+		this.canvasGrp.selectAll(".d3-focus-path").remove();
+
+		let objSel;
+		if (type === "node") {
+			objSel = this.getNodeGroupSelectionById(obj.id);
+
+			objSel.insert("path", ":first-child")
+				.attr("class", "d3-focus-path")
+				.attr("d", (d) => this.getNodeShapePathSizing(d));
+
+
+		} else if (type === "comment") {
+			objSel = this.getCommentGroupSelectionById(obj.id);
+
+			objSel.insert("rect", ":first-child")
+				.attr("class", "d3-focus-path")
+				.attr("x", -this.canvasLayout.commentSizingArea)
+				.attr("y", -this.canvasLayout.commentSizingArea)
+				.attr("height", (c) => c.height + (2 * this.canvasLayout.commentSizingArea))
+				.attr("width", (c) => c.width + (2 * this.canvasLayout.commentSizingArea));
+
+		} else if (type === "link") {
+			objSel = this.getLinkGroupSelectionById(obj.id);
+
+			// TODO - Think of a way to show focus on links other than line thckness
+		}
+		if (obj) {
+			const zoom = this.canvasController.getZoomToReveal([obj.id]);
+			if (zoom) {
+				this.zoomTo(zoom);
+			}
+		}
+
+		if (objSel) {
+			const element = objSel.node();
+			if (element) {
+				element.focus();
+			}
+
+		} else {
+			const id = obj ? obj.id : "Unknown";
+			this.logger.error(`Error applying focus to ${type} object with ID: ${id}`);
+		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Elyra Authors
+ * Copyright 2023 - 2024 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 @import "../client/components/custom-canvases/flows/flows.scss";
 @import "../client/components/custom-canvases/stages/stages.scss";
 @import "../client/components/custom-canvases/stages-card-node/stages-card-node.scss";
+@import "../client/components/custom-canvases/prompt/prompt.scss";
 @import "../client/components/custom-canvases/read-only/read-only.scss";
 @import "../client/components/custom-canvases/progress/progress.scss";
 @import "../client/components/custom-canvases/logic/logic.scss";
@@ -24,5 +25,8 @@
 @import "../client/components/custom-canvases/explain2/explain2.scss";
 @import "../client/components/custom-canvases/streams/streams.scss";
 @import "../client/components/custom-canvases/tables/tables.scss";
+@import "../client/components/custom-canvases/all-ports/all-ports.scss";
+@import "../client/components/custom-canvases/parallax/parallax.scss";
+@import "../client/components/custom-canvases/network/network.scss";
 @import "../client/components/custom-canvases/react-nodes-carbon/react-nodes-carbon.scss";
 @import "../client/components/custom-canvases/react-nodes-mapping/react-nodes-mapping.scss";

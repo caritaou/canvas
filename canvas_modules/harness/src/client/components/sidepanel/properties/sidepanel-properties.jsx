@@ -38,7 +38,7 @@ import {
 	CHOOSE_FROM_LOCATION,
 	LOCAL_FILE_OPTION,
 	PARAMETER_DEFS
-} from "../../../constants/constants.js";
+} from "../../../constants/harness-constants.js";
 
 import FormsService from "../../../services/FormsService";
 
@@ -70,6 +70,7 @@ export default class SidePanelProperties extends React.Component {
 			"propertiesContainerType": this.props.propertiesConfig.propertiesContainerType,
 			"categoryView": this.props.propertiesConfig.categoryView,
 			"propertiesSchemaValidation": this.props.propertiesConfig.propertiesSchemaValidation,
+			"iconSwitch": this.props.propertiesConfig.iconSwitch,
 			"applyPropertiesWithoutEdit": this.props.propertiesConfig.applyPropertiesWithoutEdit,
 			"applyOnBlur": this.props.propertiesConfig.applyOnBlur,
 			"convertValueDataTypes": this.props.propertiesConfig.convertValueDataTypes,
@@ -139,7 +140,7 @@ export default class SidePanelProperties extends React.Component {
 			if (fileExt === "json") {
 				this.setState({
 					commonProperties: evt.target.files[0],
-				});
+				}, () => this.submitProperties());
 				this.props.log("Common Properties JSON file selected", filename);
 			}
 		}
@@ -259,6 +260,7 @@ export default class SidePanelProperties extends React.Component {
 					accept={[".json"]}
 					onChange={this.onPropertiesSelect}
 					iconDescription="Delete file"
+					filenameStatus={this.isReadyToSubmitProperties ? "complete" : "uploading"}
 				/>
 				{space}
 			</div>);
@@ -367,6 +369,7 @@ SidePanelProperties.propTypes = {
 		disableWideFlyoutPrimaryButtonForPanelId: PropTypes.string,
 		disableWideFlyoutPrimaryButton: PropTypes.func,
 		setWideFlyoutPrimaryButtonDisabled: PropTypes.func, // action
-		convertValueDataTypes: PropTypes.bool
+		convertValueDataTypes: PropTypes.bool,
+		iconSwitch: PropTypes.bool
 	})
 };

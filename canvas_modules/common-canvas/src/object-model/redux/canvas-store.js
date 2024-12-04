@@ -23,6 +23,7 @@ import tooltip from "./reducers/tooltip.js";
 import palette from "./reducers/palette.js";
 import canvasinfo from "./reducers/canvasinfo.js";
 import contextmenu from "./reducers/contextmenu.js";
+import leftflyout from "./reducers/leftflyout.js";
 import rightflyout from "./reducers/rightflyout.js";
 import bottompanel from "./reducers/bottompanel.js";
 import toppanel from "./reducers/toppanel.js";
@@ -54,6 +55,7 @@ export default class CanavasStore {
 			canvastoolbar,
 			texttoolbar,
 			contextmenu,
+			leftflyout,
 			rightflyout,
 			bottompanel,
 			toppanel
@@ -72,17 +74,20 @@ export default class CanavasStore {
 			canvastoolbar: {},
 			texttoolbar: { isOpen: false },
 			contextmenu: { isOpen: false, menuDef: [], source: {} },
-			rightflyout: {},
+			leftflyout: {},
+			rightflyout: { panelWidth: 0 },
 			bottompanel: { panelHeight: 393 },
 			toppanel: { }
 		};
 
-		if (typeof window !== "undefined") {
-			const enableDevTools = window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__();
-			this.store = createStore(combinedReducer, initialState, enableDevTools);
-		} else {
-			this.store = createStore(combinedReducer, initialState);
-		}
+		// This code removed because it was causing slowdown in the test harness with the
+		// debugger open in the latest version of Chrome.
+		// if (typeof window !== "undefined") {
+		// 	const enableDevTools = window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__();
+		// 	this.store = createStore(combinedReducer, initialState, enableDevTools);
+		// } else {
+		this.store = createStore(combinedReducer, initialState);
+		// }
 
 		this.dispatch = this.dispatch.bind(this);
 	}
@@ -141,6 +146,21 @@ export default class CanavasStore {
 			return true;
 		}
 		return false;
+	}
+
+	getCountNodes(pipelineId) {
+		const pipeline = this.getNonClonedPipeline(pipelineId);
+		return pipeline?.nodes?.length || 0;
+	}
+
+	getCountComments(pipelineId) {
+		const pipeline = this.getNonClonedPipeline(pipelineId);
+		return pipeline?.comments?.length || 0;
+	}
+
+	getCountLinks(pipelineId) {
+		const pipeline = this.getNonClonedPipeline(pipelineId);
+		return pipeline?.links?.length || 0;
 	}
 
 	// This is a service method for retrieving the internal pipeline. It does NOT
@@ -254,6 +274,10 @@ export default class CanavasStore {
 		return this.cloneData(this.store.getState().tooltip);
 	}
 
+	isLeftFlyoutOpen() {
+		return this.store.getState().leftflyout.isOpen;
+	}
+
 	isRightFlyoutOpen() {
 		return this.store.getState().rightflyout.isOpen;
 	}
@@ -296,6 +320,10 @@ export default class CanavasStore {
 		return this.getSelectionInfo().pipelineId;
 	}
 
+	getCountSelectedObjects() {
+		return this.store.getState().selectioninfo?.selections?.length || 0;
+	}
+
 	getSelectedObjectIds() {
 		const selectedObjIds = this.store.getState().selectioninfo.selections || [];
 		return this.cloneData(selectedObjIds);
@@ -311,6 +339,16 @@ export default class CanavasStore {
 
 	getSelectedLinks() {
 		return cloneDeep(this.getNonClonedSelectedObjs("links"));
+	}
+
+	areAllObjectsSelected(includeLinks) {
+		const pId = this.getSelectedPipelineId();
+		let countObjs = this.getCountNodes(pId) + this.getCountComments(pId);
+		if (includeLinks) {
+			countObjs += this.getCountLinks(pId);
+		}
+		const selObjs = this.getCountSelectedObjects();
+		return selObjs > 0 && countObjs === selObjs; // Only return true if at ast one object is selected.
 	}
 
 	// Returns true if all the selected objects are links. That is, if the

@@ -562,7 +562,8 @@ export default class SVGCanvasUtilsZoom {
 	// zoomAction and zoomEnd. It does not perform a zoom if newZoomTransform
 	// is the same as the current zoom transform.
 	zoomCanvasInvokeZoomBehavior(newZoomTransform, animateTime) {
-		if (isFinite(newZoomTransform.x) &&
+		if (newZoomTransform &&
+				isFinite(newZoomTransform.x) &&
 				isFinite(newZoomTransform.y) &&
 				isFinite(newZoomTransform.k) &&
 				this.zoomHasChanged(newZoomTransform)) {
@@ -618,7 +619,7 @@ export default class SVGCanvasUtilsZoom {
 
 		if (nodes.length > 0 || comments.length > 0 || links.length > 0) {
 			const canvasDimensions = CanvasUtils.getCanvasDimensions(nodes, comments, links, 0, 0, true);
-			const canv = this.convertRectAdjustedForScaleWithPadding(canvasDimensions, 1, 10);
+			const canv = this.convertRectAdjustedForScaleWithPadding(canvasDimensions, 1, 30);
 			const xPosInt = parseInt(xPos, 10);
 			const yPosInt = typeof yPos === "undefined" ? xPosInt : parseInt(yPos, 10);
 

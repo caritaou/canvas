@@ -22,7 +22,7 @@ import Toolbar from "../../src/toolbar/toolbar.jsx";
 import CanvasBottomPanel from "../../src/common-canvas/cc-bottom-panel.jsx";
 import CommonCanvasRightFlyout from "../../src/common-canvas/cc-right-flyout.jsx";
 import CommonCanvasStateTag from "../../src/common-canvas/cc-state-tag.jsx";
-import { createCommonCanvas } from "../_utils_/common-canvas-utils.js";
+import { createCommonCanvas } from "../_utils_/cc-utils.js";
 import { expect } from "chai";
 import sinon from "sinon";
 
@@ -65,7 +65,8 @@ describe("CommonCanvas renders correctly", () => {
 		const config = {};
 		const canvasParams = { showRightFlyout: false };
 		const wrapper = createCommonCanvas(config, canvasController, canvasParams);
-		expect(wrapper.find(CommonCanvasRightFlyout)).to.have.length(1);
+		// When showRightFlyout is false then Right Flyout should not be visible
+		expect(wrapper.find(CommonCanvasRightFlyout)).to.have.length(0);
 		expect(canvasController.isRightFlyoutOpen() === false).to.be.true;
 	});
 
@@ -106,9 +107,11 @@ describe("CommonCanvas renders correctly", () => {
 		expect(wrapper.find(CanvasContents)).to.have.length(1);
 	});
 
-	it("should render one <PaletteDialog/> component when enablePaletteLayout is set to Modal", () => {
-		const config = { enablePaletteLayout: "Modal" };
+	it("should render one <PaletteDialog/> component when enablePaletteLayout is set to Dialog", () => {
+		const config = { enablePaletteLayout: "Dialog" };
 		const wrapper = createCommonCanvas(config, canvasController);
+		canvasController.openPalette();
+		wrapper.update();
 		expect(wrapper.find(PaletteDialog)).to.have.length(1);
 	});
 

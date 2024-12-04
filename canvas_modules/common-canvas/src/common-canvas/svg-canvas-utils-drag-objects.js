@@ -21,8 +21,10 @@ import * as d3Selection from "d3-selection";
 const d3 = Object.assign({}, d3Drag, d3Selection);
 
 import Logger from "../logging/canvas-logger.js";
+import KeyboardUtils from "./keyboard-utils.js";
 import CanvasUtils from "./common-canvas-utils.js";
-import { SNAP_TO_GRID_AFTER, SNAP_TO_GRID_DURING, LINK_SELECTION_DETACHABLE }
+import { SNAP_TO_GRID_AFTER, SNAP_TO_GRID_DURING, LINK_SELECTION_DETACHABLE,
+	NORTH, SOUTH, EAST, WEST }
 	from "./constants/canvas-constants.js";
 
 // This utility files provides a drag handler which manages drag operations to move
@@ -91,8 +93,7 @@ export default class SVGCanvasUtilsDragObjects {
 	}
 
 	mouseEnterNodeSizingArea(d3Event, d) {
-		if (this.ren.config.enableEditingActions && // Only set cursor when we are able to resize nodes
-				this.isNodeResizable(d) &&
+		if (CanvasUtils.isNodeResizable(d, this.ren.config) &&
 				!this.ren.isRegionSelectOrSizingInProgress()) { // Don't switch sizing direction if we are already sizing
 			let cursorType = "default";
 			if (!this.isPointerCloseToBodyEdge(d3Event, d)) {
@@ -105,7 +106,7 @@ export default class SVGCanvasUtilsDragObjects {
 	}
 
 	mouseDownNodeSizingArea(d) {
-		if (this.isNodeResizable(d)) {
+		if (CanvasUtils.isNodeResizable(d, this.ren.config)) {
 			this.nodeSizing = true;
 			// Note - node resizing and finalization of size is handled by drag functions.
 			this.ren.addTempCursorOverlay(this.nodeSizingCursor);
@@ -139,6 +140,88 @@ export default class SVGCanvasUtilsDragObjects {
 		d3.select(d3Event.currentTarget).style("cursor", "default");
 	}
 
+	// Moves the object passed in (and any other selected objects) by the
+	// x and y amounts provided. This is called when the user moves an
+	// object using the keyboard.
+	moveObject(d, dir) {
+		let xInc = 0;
+		let yInc = 0;
+
+		({ xInc, yInc } = this.getMoveIncrements(dir));
+
+		if (this.endMove) {
+			clearTimeout(this.endMove);
+			this.endMove = null;
+		}
+
+		if (!this.isMoving()) {
+			this.startObjectsMoving(d);
+		}
+
+		const x = d.x_pos + (d.width / 2);
+		const y = d.y_pos + (d.height / 2);
+		const pagePos = this.ren.convertCanvasCoordsToPageCoords(x, y);
+
+		this.moveObjects(xInc, yInc, pagePos.x, pagePos.y);
+
+		this.endMove = setTimeout(() => {
+			this.endObjectsMoving(d, "click", false, false);
+		}, 500);
+	}
+
+	// Sizes the object passed in (either a node or comment) in the
+	// direction specified. This is called when the user sizes an object
+	//	using the keyboard.
+	sizeObject(d, direction) {
+		let xInc = 0;
+		let yInc = 0;
+		let dir = direction;
+
+		({ xInc, yInc } = this.getMoveIncrements(dir));
+
+		// When direction is NORTH this will cause the bottom border of
+		// the object to be decrease and when the direction is WEST
+		// the right brorder of the object will be decreased.
+		if (dir === NORTH) {
+			dir = SOUTH;
+		} else if (dir === WEST) {
+			dir = EAST;
+		}
+
+		if (this.endSize) {
+			clearTimeout(this.endSize);
+			this.endSize = null;
+		}
+
+		if (!this.isSizing()) {
+			const objType = CanvasUtils.getObjectTypeName(d);
+			if (objType === "node") {
+				this.nodeSizing = true;
+			} else {
+				this.commentSizing = true;
+			}
+			this.initializeResizeVariables(d);
+		}
+
+		if (this.nodeSizing) {
+			this.resizeNode(xInc, yInc, d, dir);
+
+		} else if (this.commentSizing) {
+			this.resizeComment(xInc, yInc, d, dir);
+		}
+
+		this.endSize = setTimeout(() => {
+			if (this.nodeSizing) {
+				this.endNodeSizing(d);
+				this.nodeSizing = false;
+
+			} else if (this.commentSizing) {
+				this.endCommentSizing(d);
+				this.commentSizing = false;
+			}
+		}, 500);
+	}
+
 	dragStartObject(d3Event, d) {
 		this.logger.logStartTimer("dragStartObject");
 
@@ -151,7 +234,7 @@ export default class SVGCanvasUtilsDragObjects {
 			this.initializeResizeVariables(d);
 
 		} else {
-			this.dragObjectsStart(d3Event, d);
+			this.startObjectsMoving(d);
 		}
 
 		this.logger.logEndTimer("dragStartObject", true);
@@ -160,13 +243,13 @@ export default class SVGCanvasUtilsDragObjects {
 	dragObject(d3Event, d) {
 		this.logger.logStartTimer("dragObject");
 		if (this.commentSizing) {
-			this.resizeComment(d3Event, d);
+			this.resizeComment(d3Event.dx, d3Event.dy, d, this.commentSizingDirection);
 
 		} else if (this.nodeSizing) {
-			this.resizeNode(d3Event, d);
+			this.resizeNode(d3Event.dx, d3Event.dy, d, this.nodeSizingDirection);
 
 		} else {
-			this.dragObjectsAction(d3Event);
+			this.moveObjects(d3Event.dx, d3Event.dy, d3Event.sourceEvent.clientX, d3Event.sourceEvent.clientY);
 		}
 
 		this.logger.logEndTimer("dragObject", true);
@@ -186,7 +269,7 @@ export default class SVGCanvasUtilsDragObjects {
 			this.nodeSizing = false;
 
 		} else {
-			this.dragObjectsEnd(d3Event, d);
+			this.endObjectsMoving(d, d3Event.type, d3Event.sourceEvent.shiftKey, KeyboardUtils.isMetaKey(d3Event.sourceEvent));
 		}
 
 		this.logger.logEndTimer("dragEndObject", true);
@@ -279,38 +362,24 @@ export default class SVGCanvasUtilsDragObjects {
 		return cursorType;
 	}
 
-	// Returns true if the node should be resizeable. Expanded supernodes are
-	// always resizabele and all other nodes, except collapsed supernodes, are
-	// resizeable when enableResizableNodes is switched on.
-	isNodeResizable(node) {
-		if (!this.ren.config.enableEditingActions ||
-				CanvasUtils.isSuperBindingNode(node) ||
-				CanvasUtils.isCollapsedSupernode(node) ||
-				(!this.ren.config.enableResizableNodes && !CanvasUtils.isExpandedSupernode(node))) {
-			return false;
-		}
-		return true;
-	}
-
 	// Sets the size and position of the node in the canvasInfo.nodes
 	// array based on the position of the pointer during the resize action
 	// then redraws the nodes and links (the link positions may move based
 	// on the node size change).
-	resizeNode(d3Event, resizeObj) {
+	resizeNode(dx, dy, resizeObj, dir) {
 		const oldSupernode = Object.assign({}, resizeObj);
 		const minHeight = this.getMinHeight(resizeObj);
 		const minWidth = this.getMinWidth(resizeObj);
 
-		const delta = this.resizeObject(d3Event, resizeObj,
-			this.nodeSizingDirection, minWidth, minHeight);
+		const delta = this.resizeObject(dx, dy, resizeObj, dir, minWidth, minHeight);
 
 		if (delta && (delta.x_pos !== 0 || delta.y_pos !== 0 || delta.width !== 0 || delta.height !== 0)) {
-			if (CanvasUtils.isSupernode(resizeObj) &&
+			if (CanvasUtils.isExpandedSupernode(resizeObj) &&
 					this.ren.config.enableMoveNodesOnSupernodeResize) {
 				const objectsInfo = CanvasUtils.moveSurroundingObjects(
 					oldSupernode,
 					this.ren.activePipeline.getNodesAndComments(),
-					this.nodeSizingDirection,
+					dir,
 					resizeObj.width,
 					resizeObj.height,
 					true // Pass true to indicate that object positions should be updated.
@@ -319,7 +388,7 @@ export default class SVGCanvasUtilsDragObjects {
 				const linksInfo = CanvasUtils.moveSurroundingDetachedLinks(
 					oldSupernode,
 					this.ren.activePipeline.links,
-					this.nodeSizingDirection,
+					dir,
 					resizeObj.width,
 					resizeObj.height,
 					true // Pass true to indicate that link positions should be updated.
@@ -338,7 +407,7 @@ export default class SVGCanvasUtilsDragObjects {
 			this.ren.displayMovedLinks();
 			this.ren.displayCanvasAccoutrements();
 
-			if (CanvasUtils.isSupernode(resizeObj)) {
+			if (CanvasUtils.isExpandedSupernode(resizeObj)) {
 				if (this.ren.dispUtils.isDisplayingSubFlow()) {
 					this.ren.displayBindingNodesToFitSVG();
 				}
@@ -352,8 +421,8 @@ export default class SVGCanvasUtilsDragObjects {
 	// array based on the position of the pointer during the resize action
 	// then redraws the comment and links (the link positions may move based
 	// on the comment size change).
-	resizeComment(d3Event, resizeObj) {
-		this.resizeObject(d3Event, resizeObj, this.commentSizingDirection, 20, 20);
+	resizeComment(dx, dy, resizeObj, dir) {
+		this.resizeObject(dx, dy, resizeObj, dir, 20, 20);
 		this.ren.displaySingleComment(resizeObj);
 		this.ren.displayMovedLinks();
 		this.ren.displayCanvasAccoutrements();
@@ -361,25 +430,25 @@ export default class SVGCanvasUtilsDragObjects {
 
 	// Sets the size and position of the object in the canvasInfo
 	// array based on the position of the pointer during the resize action.
-	resizeObject(d3Event, canvasObj, direction, minWidth, minHeight) {
+	resizeObject(dx, dy, canvasObj, direction, minWidth, minHeight) {
 		let incrementX = 0;
 		let incrementY = 0;
 		let incrementWidth = 0;
 		let incrementHeight = 0;
 
 		if (direction.indexOf("e") > -1) {
-			incrementWidth += d3Event.dx;
+			incrementWidth += dx;
 		}
 		if (direction.indexOf("s") > -1) {
-			incrementHeight += d3Event.dy;
+			incrementHeight += dy;
 		}
 		if (direction.indexOf("n") > -1) {
-			incrementY += d3Event.dy;
-			incrementHeight -= d3Event.dy;
+			incrementY += dy;
+			incrementHeight -= dy;
 		}
 		if (direction.indexOf("w") > -1) {
-			incrementX += d3Event.dx;
-			incrementWidth -= d3Event.dx;
+			incrementX += dx;
+			incrementWidth -= dx;
 		}
 
 		let xPos = 0;
@@ -530,7 +599,7 @@ export default class SVGCanvasUtilsDragObjects {
 	// bottom of the frame. Then the bigger of that height versus the default
 	// supernode minimum height is retunred.
 	getMinHeight(node) {
-		if (CanvasUtils.isSupernode(node)) {
+		if (CanvasUtils.isExpandedSupernode(node)) {
 			const minHt = Math.max(node.inputPortsHeight, node.outputPortsHeight) +
 				this.ren.canvasLayout.supernodeTopAreaHeight + this.ren.canvasLayout.supernodeSVGAreaPadding;
 			return Math.max(this.ren.canvasLayout.supernodeMinHeight, minHt);
@@ -540,14 +609,16 @@ export default class SVGCanvasUtilsDragObjects {
 
 	// Returns the minimum allowed width for the node passed in.
 	getMinWidth(node) {
-		if (CanvasUtils.isSupernode(node)) {
+		if (CanvasUtils.isExpandedSupernode(node)) {
 			return this.ren.canvasLayout.supernodeMinWidth;
 		}
 		return node.layout.defaultNodeWidth;
 	}
 
-	// Starts the dragging action for canvas objects (nodes and comments).
-	dragObjectsStart(d3Event, d) {
+	// Starts the moving action for canvas objects (nodes and comments).
+	// Can be called when the mouse is dragging the object OR when a
+	// keyboard event moves the object.
+	startObjectsMoving(d) {
 		// Ensure flags are false before staring a new drag.
 		this.existingNodeInsertableIntoLink = false;
 		this.existingNodeAttachableToDetachedLinks = false;
@@ -594,10 +665,16 @@ export default class SVGCanvasUtilsDragObjects {
 		}
 	}
 
-	// Performs the dragging action for canvas objects (nodes and comments).
-	dragObjectsAction(d3Event) {
-		this.draggingObjectData.dragOffsetX += d3Event.dx;
-		this.draggingObjectData.dragOffsetY += d3Event.dy;
+	// Performs the moving action for canvas objects (nodes and comments).
+	// This occurs either as the user is moving the mouse pointer OR each time the user
+	// presses a key on the keyboard, within the timeout value, to move the object.
+	// The dx and dy parameters are the amount to move the object in the x and y directions.
+	// The pagePosX and pagePosY parameters are the current page coordinates of either
+	// the mouse in the context of a drag operation OR the current page coordinates of the
+	// center of the object in the context of a keyboard operation.
+	moveObjects(dx, dy, pagePosX, pagePosY) {
+		this.draggingObjectData.dragOffsetX += dx;
+		this.draggingObjectData.dragOffsetY += dy;
 
 		// Limit the size a drag can be so, when the user is dragging objects in
 		// an in-place subflow they do not drag them too far.
@@ -605,8 +682,8 @@ export default class SVGCanvasUtilsDragObjects {
 		if (this.ren.dispUtils.isDisplayingSubFlowInPlace() &&
 				(this.draggingObjectData.dragOffsetX > 1000 || this.draggingObjectData.dragOffsetX < -1000 ||
 					this.draggingObjectData.dragOffsetY > 1000 || this.draggingObjectData.dragOffsetY < -1000)) {
-			this.draggingObjectData.dragOffsetX -= d3Event.dx;
-			this.draggingObjectData.dragOffsetY -= d3Event.dy;
+			this.draggingObjectData.dragOffsetX -= dx;
+			this.draggingObjectData.dragOffsetY -= dy;
 
 		} else {
 			let	increment = { x: 0, y: 0 };
@@ -621,8 +698,8 @@ export default class SVGCanvasUtilsDragObjects {
 
 			} else {
 				increment = {
-					x: d3Event.dx,
-					y: d3Event.dy
+					x: dx,
+					y: dy
 				};
 			}
 
@@ -658,7 +735,7 @@ export default class SVGCanvasUtilsDragObjects {
 		}
 
 		if (this.existingNodeInsertableIntoLink) {
-			const link = this.ren.getLinkAtMousePos(d3Event.sourceEvent.clientX, d3Event.sourceEvent.clientY);
+			const link = this.ren.getLinkAtMousePos(pagePosX, pagePosY);
 			// Set highlighting when there is no link because this will turn
 			// current highlighting off. And only switch on highlighting when we are
 			// over a fully attached link (not a detached link) and provided the
@@ -686,8 +763,12 @@ export default class SVGCanvasUtilsDragObjects {
 		}
 	}
 
-	// Ends the dragging action for canvas objects (nodes and comments).
-	dragObjectsEnd(d3Event, d) {
+	// Ends the moving action for canvas objects (nodes and comments).
+	// This happens either when the user releases the mouse button when
+	// dragging OR when the timeout value has expired when moving the
+	// object using the keyboard.
+	endObjectsMoving(d, eventType, range, augment) {
+
 		// Save a local reference to this.draggingObjectData so we can set it to null before
 		// calling the canvas-controller. This means the this.draggingObjectData object will
 		// be null when the canvas is refreshed.
@@ -708,7 +789,8 @@ export default class SVGCanvasUtilsDragObjects {
 		if (draggingObjectData.dragOffsetX === 0 &&
 				draggingObjectData.dragOffsetY === 0 &&
 				this.ren.config.enableDragWithoutSelect) {
-			this.ren.selectObjectSourceEvent(d3Event, d);
+			const objType = this.ren.activePipeline.getObjectTypeName(d);
+			this.ren.selectObject(eventType, d, objType, range, augment);
 
 		} else {
 			if (draggingObjectData.dragRunningX !== 0 ||
@@ -848,5 +930,44 @@ export default class SVGCanvasUtilsDragObjects {
 		resizeObj.width = CanvasUtils.snapToGrid(resizeObj.width, this.ren.canvasLayout.snapToGridXPx);
 		resizeObj.height = CanvasUtils.snapToGrid(resizeObj.height, this.ren.canvasLayout.snapToGridYPx);
 		return resizeObj;
+	}
+
+	// Returns an object containing the x and y increments used to move or size
+	// an object in the direction provided taking into account whether snap
+	// to grid has been switched on or not.
+	getMoveIncrements(dir) {
+		// If no snap-to-grid we just increment by 10px.
+		let x = 10;
+		let y = 10;
+
+		if (this.ren.config.enableSnapToGridType === SNAP_TO_GRID_DURING ||
+			this.ren.config.enableSnapToGridType === SNAP_TO_GRID_AFTER) {
+			x = this.ren.canvasLayout.snapToGridXPx;
+			y = this.ren.canvasLayout.snapToGridYPx;
+		}
+
+		let xInc = 0;
+		let yInc = 0;
+
+		switch (dir) {
+		case NORTH:
+			xInc = 0;
+			yInc = -y;
+			break;
+		case SOUTH:
+			xInc = 0;
+			yInc = y;
+			break;
+		case EAST:
+			xInc = x;
+			yInc = 0;
+			break;
+		default:
+		case WEST:
+			xInc = -x;
+			yInc = 0;
+			break;
+		}
+		return { xInc, yInc };
 	}
 }

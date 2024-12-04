@@ -36,12 +36,14 @@ Cypress.Commands.add("panCanvasToPosition", (canvasX, canvasY) => {
 	cy.window().then((win) => {
 		cy.getCanvasTranslateCoords()
 			.then((transform) => {
+				// Pressing space is needed for "Carbon" and "Trackpad" interaction types
+				// but does not do any harm if used with the "Mouse" interaction type.
 				cy.get("#canvas-div-0")
-					.trigger("keydown", { keyCode: 32, release: false });
+					.trigger("keydown", { code: "Space", keyCode: 32, release: false });
 				cy.get("#canvas-div-0")
-					.trigger("mousedown", "topLeft", { which: 1, view: win });
+					.trigger("mousedown", 1, 1, { which: 1, view: win }); // Start at position 1, 1 as using topLeft doesn't work
 				cy.get("#canvas-div-0")
-					.trigger("mousemove", canvasX + transform.x, canvasY + transform.y, { view: win });
+					.trigger("mousemove", canvasX + transform.x + 1, canvasY + transform.y + 1, { view: win });
 				cy.get("#canvas-div-0")
 					.trigger("mouseup", { which: 1, view: win });
 			});
@@ -53,9 +55,9 @@ Cypress.Commands.add("moveMouseToCoordinates", (x, y) => {
 	cy.get(".d3-svg-canvas-div").trigger("mousemove", x, y);
 });
 
-// Within ZoomIn or ZoomOut, move the mouse to the {x,y} position
+// Move the mouse to the {x,y} position in the palette
 Cypress.Commands.add("moveMouseToPaletteArea", (x, y) => {
-	cy.get(".palette-flyout-categories").trigger("mousemove", x, y);
+	cy.get(".palette-flyout-div").trigger("mousemove", x, y);
 });
 
 // Selects a region on the canvas by 'pulling out' a rectangle over
@@ -84,5 +86,16 @@ Cypress.Commands.add("moveBottomPanelDivider", (y) => {
 			.trigger("mousemove", 200, y, { view: win, force: true });
 		cy.get("#canvas-div-0")
 			.trigger("mouseup", 200, y, { view: win, force: true });
+	});
+});
+
+Cypress.Commands.add("moveRightFlyoutDivider", (x) => {
+	cy.window().then((win) => {
+		cy.get(".right-flyout-container .right-flyout-drag")
+			.trigger("mousedown", "center", { view: win, button: 0, force: true });
+		cy.get("#canvas-div-0")
+			.trigger("mousemove", x, 200, { viewe: win, force: true });
+		cy.get("#canvas-div-0")
+			.trigger("mouseup", x, 200, { view: win, force: true });
 	});
 });

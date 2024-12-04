@@ -157,10 +157,12 @@ export default class PipelineOutHandler {
 			uiData.expanded_width = ciNode.expanded_width;
 			uiData.expanded_height = ciNode.expanded_height;
 
-		} else if (ciNode.isResized) {
+		}
+
+		if (ciNode.isResized) {
 			uiData.is_resized = ciNode.isResized;
-			uiData.resize_width = ciNode.width;
-			uiData.resize_height = ciNode.height;
+			uiData.resize_width = ciNode.resizeWidth;
+			uiData.resize_height = ciNode.resizeHeight;
 		}
 
 		if (ciNode.messages && !isEmpty(ciNode.messages)) {
@@ -352,6 +354,12 @@ export default class PipelineOutHandler {
 			};
 			if (comment.class_name) {
 				newCom.class_name = comment.class_name;
+			}
+			if (comment.contentType) {
+				newCom.contentType = comment.contentType;
+			}
+			if (comment.formats) {
+				newCom.formats = comment.formats;
 			}
 			newCom.content = comment.content;
 			newCom.associated_id_refs = this.createCommentLinks(canvasInfoLinks, comment.id);

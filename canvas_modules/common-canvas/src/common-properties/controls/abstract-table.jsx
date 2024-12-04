@@ -18,9 +18,11 @@
 import React from "react";
 import PropTypes from "prop-types";
 import { Button, Checkbox } from "@carbon/react";
+import { TrashCan } from "@carbon/react/icons";
 import FlexibleTable from "./../components/flexible-table";
 import TableButtons from "./../components/table-buttons";
 import SubPanelCell from "./../panels/sub-panel/cell.jsx";
+import Tooltip from "../../tooltip/tooltip.jsx";
 import ReadonlyControl from "./readonly";
 import * as PropertyUtils from "./../util/property-utils";
 import classNames from "classnames";
@@ -213,7 +215,7 @@ export default class AbstractTable extends React.Component {
 	}
 
 	isReadonlyTable() {
-		return this.props.control.controlType === ControlType.READONLYTABLE;
+		return this.props.control.controlType === ControlType.READONLYTABLE || this.props.readOnly;
 	}
 
 	indexOfColumn(controlId) {
@@ -429,7 +431,9 @@ export default class AbstractTable extends React.Component {
 	}
 
 	makeTableToolbar(selectedRows) {
-		if ((this.props.addRemoveRows || this.props.control?.moveableRows || this.isSelectSummaryEdit(selectedRows)) && selectedRows?.length > 0) {
+		if ((this.props.addRemoveRows || this.props.control?.moveableRows || this.isSelectSummaryEdit(selectedRows)) &&
+		selectedRows?.length > 0 &&
+		this.props.control.rowSelection !== ROW_SELECTION.SINGLE) {
 			const multiSelectEditRowPropertyId = {
 				name: this.selectSummaryPropertyName,
 				row: 0
@@ -482,7 +486,7 @@ export default class AbstractTable extends React.Component {
 			<div className="properties-at-buttons-container">
 				<Button
 					className="properties-add-fields-button"
-					disabled={addButtonDisabled}
+					disabled={addButtonDisabled || this.props.readOnly}
 					onClick={this.addOnClick.bind(this, this.props.propertyId)}
 					size="sm"
 					kind="ghost"
@@ -506,6 +510,7 @@ export default class AbstractTable extends React.Component {
 					size="sm"
 					kind="ghost"
 					renderIcon={Edit}
+					disabled={this.props.readOnly}
 				>
 					{tableButtonConfig.label}
 				</Button>
@@ -703,6 +708,9 @@ export default class AbstractTable extends React.Component {
 			// set to specific size. Exclude this column from resizing.
 			headers.push({ "key": "subpanel", "label": "", "width": TABLE_SUBPANEL_BUTTON_WIDTH, "staticWidth": true });
 		}
+		if (this.props.control.rowSelection === ROW_SELECTION.SINGLE) {
+			headers.push({ "key": "deleteRow", "label": "", "width": TABLE_SUBPANEL_BUTTON_WIDTH, "staticWidth": true });
+		}
 		return headers;
 	}
 
@@ -731,6 +739,34 @@ export default class AbstractTable extends React.Component {
 				if (this.props.control.childItem && !selectSummaryRow && !this.isReadonlyTable()) {
 					const cell = this.buildChildItem(propertyName, rowIndex, tableState);
 					columns.push(cell);
+				}
+				if (this.props.control.rowSelection === ROW_SELECTION.SINGLE) {
+					const toolTip = PropertyUtils.formatMessage(this.reactIntl, MESSAGE_KEYS.TABLE_DELETEICON_TOOLTIP);
+					const tooltipId = "tooltip-delete-row";
+					const deleteOption = (
+						<Tooltip
+							id={tooltipId}
+							tip={toolTip}
+							direction="left"
+							className="properties-tooltips icon-tooltip"
+						>
+							<Button
+								kind="ghost"
+								size="sm"
+								className="delete-button"
+								hasIconOnly
+								onClick={this.removeSelected}
+								renderIcon={TrashCan}
+								iconDescription={toolTip}
+							/>
+						</Tooltip>
+					);
+					const deleteRow = {
+						column: "deleteRow",
+						width: TABLE_SUBPANEL_BUTTON_WIDTH,
+						content: deleteOption
+					};
+					columns.push(deleteRow);
 				}
 				rows.push({
 					columns: columns
@@ -792,7 +828,8 @@ AbstractTable.propTypes = {
 	selectedRows: PropTypes.array, // set by redux
 	addRemoveRows: PropTypes.bool, // set by redux
 	tableButtons: PropTypes.object, // set in by redux
-	hideEditButton: PropTypes.bool // set by redux
+	hideEditButton: PropTypes.bool, // set by redux
+	readOnly: PropTypes.bool
 };
 
 AbstractTable.defaultProps = {

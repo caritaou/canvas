@@ -182,9 +182,9 @@ export default class SVGCanvasUtilsDragNewLink {
 		const transPos = this.ren.getTransformedMousePos(d3Event);
 
 		if (this.drawingNewLinkData.action === COMMENT_LINK) {
-			this.drawNewCommentLinkForPorts(transPos);
+			this.drawNewCommentLink(transPos);
 		} else {
-			this.drawNewNodeLinkForPorts(transPos);
+			this.drawNewNodeLink(transPos);
 		}
 		// Switch on an attribute to indicate a new link is being dragged
 		// towards and over a target node.
@@ -193,7 +193,7 @@ export default class SVGCanvasUtilsDragNewLink {
 		}
 	}
 
-	drawNewCommentLinkForPorts(transPos) {
+	drawNewCommentLink(transPos) {
 		const srcComment = this.ren.activePipeline.getComment(this.drawingNewLinkData.srcObjId);
 		const startPos = this.ren.linkUtils.getNewStraightCommentLinkStartPos(srcComment, transPos);
 		const linkType = COMMENT_LINK;
@@ -243,26 +243,35 @@ export default class SVGCanvasUtilsDragNewLink {
 		}
 	}
 
-	drawNewNodeLinkForPorts(transPos) {
-		const linkType = this.ren.config.enableAssocLinkCreation ? ASSOCIATION_LINK : NODE_LINK;
+	drawNewNodeLink(transPos) {
+		const linkCategory = this.ren.config.enableAssocLinkCreation ? ASSOCIATION_LINK : NODE_LINK;
 
-		let startPos;
-		if (this.ren.canvasLayout.linkType === LINK_TYPE_STRAIGHT) {
-			startPos = this.ren.linkUtils.getNewStraightNodeLinkStartPos(this.drawingNewLinkData.srcNode, transPos);
-		} else {
-			startPos = {
-				x: this.drawingNewLinkData.startPos.x,
-				y: this.drawingNewLinkData.startPos.y };
-		}
+		// Create a temporary link to represent the new link being created. If we are
+		// creating an association link from an input port we pass in the reverse values.
+		const inLink = (linkCategory === ASSOCIATION_LINK && this.drawingNewLinkData.portType === "input")
+			? {
+				type: linkCategory,
+				trgNode: this.drawingNewLinkData.srcNode,
+				trgNodeId: this.drawingNewLinkData.srcObjId,
+				trgNodePortId: this.drawingNewLinkData.srcPortId,
+				srcPos: {
+					x_pos: transPos.x,
+					y_pos: transPos.y
+				}
+			}
+			: {
+				type: linkCategory,
+				srcObj: this.drawingNewLinkData.srcNode,
+				srcNodeId: this.drawingNewLinkData.srcObjId,
+				srcNodePortId: this.drawingNewLinkData.srcPortId,
+				trgPos: {
+					x_pos: transPos.x,
+					y_pos: transPos.y
+				}
+			};
 
-		this.drawingNewLinkData.linkArray = [{
-			"x1": startPos.x,
-			"y1": startPos.y,
-			"x2": transPos.x,
-			"y2": transPos.y,
-			"originX": startPos.originX,
-			"originY": startPos.originY,
-			"type": linkType }];
+		const link = this.ren.getDetachedLinkObj(inLink);
+		this.drawingNewLinkData.linkArray = this.ren.linkUtils.addConnectionPaths([link]);
 
 		if (this.ren.config.enableAssocLinkCreation) {
 			this.drawingNewLinkData.linkArray[0].assocLinkVariation =
@@ -279,9 +288,10 @@ export default class SVGCanvasUtilsDragNewLink {
 		const connectionStartSel = this.ren.nodesLinksGrp.selectAll(".d3-new-connection-start");
 		const connectionGuideSel = this.ren.nodesLinksGrp.selectAll(".d3-new-connection-guide");
 
-		// For a straight node line, don't draw the new link line when the guide
-		// icon or object is inside the node boundary.
-		if (linkType === NODE_LINK &&
+		// For a straight node line, don't draw the new link line when the guide icon
+		// or object is inside the node boundary otherwise it looks ugly when trying
+		// to draw straight lines over the node.
+		if (linkCategory === NODE_LINK &&
 				this.ren.canvasLayout.linkType === LINK_TYPE_STRAIGHT &&
 				this.ren.nodeUtils.isPointInNodeBoundary(transPos, this.drawingNewLinkData.srcNode)) {
 			this.removeNewLinkLine();
@@ -292,7 +302,7 @@ export default class SVGCanvasUtilsDragNewLink {
 				.enter()
 				.append("path")
 				.attr("class", "d3-new-connection-line")
-				.attr("linkType", linkType)
+				.attr("linkType", linkCategory)
 				.merge(connectionLineSel)
 				.attr("d", pathInfo.path)
 				.attr("transform", pathInfo.transform);
@@ -304,7 +314,7 @@ export default class SVGCanvasUtilsDragNewLink {
 				.enter()
 				.append(this.drawingNewLinkData.portObject)
 				.attr("class", "d3-new-connection-start")
-				.attr("linkType", linkType)
+				.attr("linkType", linkCategory)
 				.merge(connectionStartSel)
 				.each((d, i, startSel) => {
 					// No need to draw the starting object of the new line if it is an image.
@@ -322,7 +332,7 @@ export default class SVGCanvasUtilsDragNewLink {
 			.enter()
 			.append(this.drawingNewLinkData.guideObject)
 			.attr("class", "d3-new-connection-guide")
-			.attr("linkType", linkType)
+			.attr("linkType", linkCategory)
 			.merge(connectionGuideSel)
 			.each((d, i, guideSel) => {
 				if (this.drawingNewLinkData.guideObject === PORT_OBJECT_IMAGE) {
@@ -363,20 +373,23 @@ export default class SVGCanvasUtilsDragNewLink {
 		}
 		var trgNode = this.ren.getNodeAtMousePos(d3Event);
 		if (trgNode !== null) {
-			this.completeNewLinkOnNode(d3Event, trgNode, drawingNewLinkData);
+			this.createNewLinkFromDragData(d3Event, trgNode, drawingNewLinkData);
+
 		} else {
 			if (this.ren.config.enableLinkSelection === LINK_SELECTION_DETACHABLE &&
 					drawingNewLinkData.action === NODE_LINK &&
 					!this.ren.config.enableAssocLinkCreation) {
 				this.completeNewDetachedLink(d3Event, drawingNewLinkData);
+
 			} else {
 				this.stopDrawingNewLink(drawingNewLinkData);
 			}
 		}
 	}
 
-	// Handles the completion of a new link when the end is dropped on a node.
-	completeNewLinkOnNode(d3Event, trgNode, drawingNewLinkData) {
+	// Handles the creation of a link when the end of a new link
+	// being drawn from a source node is dropped on a target node.
+	createNewLinkFromDragData(d3Event, trgNode, drawingNewLinkData) {
 		// If we completed a connection remove the new line objects.
 		this.removeNewLink();
 
@@ -385,66 +398,110 @@ export default class SVGCanvasUtilsDragNewLink {
 			this.ren.setLinkOverNodeCancel();
 		}
 
+		// Create the link.
+		const type = drawingNewLinkData.action;
+		const srcObjId = drawingNewLinkData.srcObjId;
+
 		if (trgNode !== null) {
-			const type = drawingNewLinkData.action;
 			if (type === NODE_LINK) {
-				const srcNode = this.ren.activePipeline.getNode(drawingNewLinkData.srcObjId);
+				const srcNode = this.ren.activePipeline.getNode(srcObjId);
 				const srcPortId = drawingNewLinkData.srcPortId;
 				const trgPortId = this.ren.getInputNodePortId(d3Event, trgNode);
-
-				if (CanvasUtils.isDataConnectionAllowed(srcPortId, trgPortId, srcNode, trgNode, this.ren.activePipeline.links)) {
-					this.ren.canvasController.editActionHandler({
-						editType: "linkNodes",
-						editSource: "canvas",
-						nodes: [{ "id": drawingNewLinkData.srcObjId, "portId": drawingNewLinkData.srcPortId }],
-						targetNodes: [{ "id": trgNode.id, "portId": trgPortId }],
-						type: type,
-						linkType: "data", // Added for historical purposes - for WML Canvas support
-						pipelineId: this.ren.activePipeline.id });
-
-				} else if (this.ren.config.enableLinkReplaceOnNewConnection &&
-							CanvasUtils.isDataLinkReplacementAllowed(srcPortId, trgPortId, srcNode, trgNode, this.ren.activePipeline.links)) {
-					const linksToTrgPort = CanvasUtils.getDataLinksConnectedTo(trgPortId, trgNode, this.ren.activePipeline.links);
-					// We only replace a link to a maxed out cardinality port if there
-					// is only one link. i.e. the input port cardinality is 0:1
-					if (linksToTrgPort.length === 1) {
-						this.ren.canvasController.editActionHandler({
-							editType: "linkNodesAndReplace",
-							editSource: "canvas",
-							nodes: [{ "id": drawingNewLinkData.srcObjId, "portId": drawingNewLinkData.srcPortId }],
-							targetNodes: [{ "id": trgNode.id, "portId": trgPortId }],
-							type: type,
-							pipelineId: this.pipelineId,
-							replaceLink: linksToTrgPort[0]
-						});
-					}
-				}
+				this.createNewNodeLink(srcNode, srcPortId, trgNode, trgPortId);
 
 			} else if (type === ASSOCIATION_LINK) {
-				const srcNode = this.ren.activePipeline.getNode(drawingNewLinkData.srcObjId);
+				const srcObj = this.ren.activePipeline.getNode(srcObjId);
+				this.createNewAssocLink(srcObj, trgNode);
 
-				if (CanvasUtils.isAssocConnectionAllowed(srcNode, trgNode, this.ren.activePipeline.links)) {
-					this.ren.canvasController.editActionHandler({
-						editType: "linkNodes",
-						editSource: "canvas",
-						nodes: [{ "id": drawingNewLinkData.srcObjId }],
-						targetNodes: [{ "id": trgNode.id }],
-						type: type,
-						pipelineId: this.ren.activePipeline.id });
-				}
+			} else if (type === COMMENT_LINK) {
+				const srcObj = this.ren.activePipeline.getComment(srcObjId);
+				this.createNewCommentLink(srcObj, trgNode);
+			}
+		}
+	}
 
-			} else {
-				if (CanvasUtils.isCommentLinkConnectionAllowed(drawingNewLinkData.srcObjId, trgNode.id, this.ren.activePipeline.links)) {
-					this.ren.canvasController.editActionHandler({
-						editType: "linkComment",
-						editSource: "canvas",
-						nodes: [drawingNewLinkData.srcObjId],
-						targetNodes: [trgNode.id],
-						type: COMMENT_LINK,
-						linkType: "comment", // Added for historical purposes - for WML Canvas support
-						pipelineId: this.ren.activePipeline.id });
+	// Creates a link from the currently selected objects. This is called when
+	// the user presses a keyboard shortcut to create the link. For the link to be
+	// created, there must be exactly two selections and the first selection must
+	// be either a comment or a node and the second selection must be a node.
+	createNewLinkFromSelections() {
+		const selNodes = this.ren.activePipeline.getSelectedNodes();
+		const selComments = this.ren.activePipeline.getSelectedComments();
+
+		if (selNodes.length + selComments.length === 2) {
+			if (selNodes.length === 1 && selComments.length === 1) {
+				this.createNewCommentLink(selComments[0], selNodes[0]);
+
+			} else if (selNodes.length === 2) {
+				if (this.ren.config.enableAssocLinkCreation) {
+					this.createNewAssocLink(selNodes[0], selNodes[1]);
+
+				} else {
+					const srcPortId = CanvasUtils.getDefaultOutputPortId(selNodes[0]);
+					const trgPortId = CanvasUtils.getDefaultInputPortId(selNodes[1]);
+					this.createNewNodeLink(selNodes[0], srcPortId, selNodes[1], trgPortId);
+					// This selects just the target object which allows the user to
+					// more easily create a subsequent link to the next node.
+					this.ren.canvasController.setSelections([selNodes[1].id]);
 				}
 			}
+		}
+	}
+
+	createNewNodeLink(srcNode, srcPortId, trgNode, trgPortId) {
+		if (CanvasUtils.isDataConnectionAllowed(srcPortId, trgPortId, srcNode, trgNode,
+			this.ren.activePipeline.links, this.ren.config.enableSelfRefLinks)) {
+			this.ren.canvasController.editActionHandler({
+				editType: "linkNodes",
+				editSource: "canvas",
+				nodes: [{ "id": srcNode.id, "portId": srcPortId }],
+				targetNodes: [{ "id": trgNode.id, "portId": trgPortId }],
+				type: NODE_LINK,
+				linkType: "data", // Added for historical purposes - for WML Canvas support
+				pipelineId: this.ren.activePipeline.id });
+
+		} else if (this.ren.config.enableLinkReplaceOnNewConnection &&
+					CanvasUtils.isDataLinkReplacementAllowed(srcPortId, trgPortId, srcNode, trgNode,
+						this.ren.activePipeline.links, this.ren.config.enableSelfRefLinks)) {
+			const linksToTrgPort = CanvasUtils.getDataLinksConnectedTo(trgPortId, trgNode, this.ren.activePipeline.links);
+			// We only replace a link to a maxed out cardinality port if there
+			// is only one link. i.e. the input port cardinality is 0:1
+			if (linksToTrgPort.length === 1) {
+				this.ren.canvasController.editActionHandler({
+					editType: "linkNodesAndReplace",
+					editSource: "canvas",
+					nodes: [{ "id": srcNode.id, "portId": srcPortId }],
+					targetNodes: [{ "id": trgNode.id, "portId": trgPortId }],
+					type: NODE_LINK,
+					pipelineId: this.pipelineId,
+					replaceLink: linksToTrgPort[0]
+				});
+			}
+		}
+	}
+
+	createNewAssocLink(srcNode, trgNode) {
+		if (CanvasUtils.isAssocConnectionAllowed(srcNode, trgNode, this.ren.activePipeline.links)) {
+			this.ren.canvasController.editActionHandler({
+				editType: "linkNodes",
+				editSource: "canvas",
+				nodes: [{ "id": srcNode.id }],
+				targetNodes: [{ "id": trgNode.id }],
+				type: ASSOCIATION_LINK,
+				pipelineId: this.ren.activePipeline.id });
+		}
+	}
+
+	createNewCommentLink(srcObj, trgNode) {
+		if (CanvasUtils.isCommentLinkConnectionAllowed(srcObj.id, trgNode.id, this.ren.activePipeline.links)) {
+			this.ren.canvasController.editActionHandler({
+				editType: "linkComment",
+				editSource: "canvas",
+				nodes: [srcObj.id],
+				targetNodes: [trgNode.id],
+				type: COMMENT_LINK,
+				linkType: "comment", // Added for historical purposes - for WML Canvas support
+				pipelineId: this.ren.activePipeline.id });
 		}
 	}
 
@@ -480,11 +537,27 @@ export default class SVGCanvasUtilsDragNewLink {
 		this.stopDrawingNewLinkForPorts(drawingNewLinkData);
 	}
 
+	// Draws a 'snap-back' link with a rubber-band effect that
+	// animates the cancellation of a new link's creation.
 	stopDrawingNewLinkForPorts(drawingNewLinkData) {
-		const saveX1 = drawingNewLinkData.linkArray[0].x1;
-		const saveY1 = drawingNewLinkData.linkArray[0].y1;
-		const saveX2 = drawingNewLinkData.linkArray[0].x2;
-		const saveY2 = drawingNewLinkData.linkArray[0].y2;
+		if (drawingNewLinkData.linkArray?.length === 0) {
+			return;
+		}
+		let saveX1 = drawingNewLinkData.linkArray[0].x1;
+		let saveY1 = drawingNewLinkData.linkArray[0].y1;
+		let saveX2 = drawingNewLinkData.linkArray[0].x2;
+		let saveY2 = drawingNewLinkData.linkArray[0].y2;
+
+		// If we were creating an association link from an input port of
+		// the node, we reverse the way the snap-back link is drawn by
+		// switching the coordinates.
+		if (drawingNewLinkData.action === ASSOCIATION_LINK &&
+			drawingNewLinkData.portType === "input") {
+			saveX1 = drawingNewLinkData.linkArray[0].x2;
+			saveY1 = drawingNewLinkData.linkArray[0].y2;
+			saveX2 = drawingNewLinkData.linkArray[0].x1;
+			saveY2 = drawingNewLinkData.linkArray[0].y1;
+		}
 
 		const saveNewLinkData = Object.assign({}, drawingNewLinkData);
 
@@ -575,7 +648,8 @@ export default class SVGCanvasUtilsDragNewLink {
 				const trgNode = node;
 				const srcNodePortId = this.drawingNewLinkData.srcPortId;
 				const trgNodePortId = CanvasUtils.getDefaultInputPortId(trgNode); // TODO - make specific to nodes.
-				return CanvasUtils.isDataConnectionAllowed(srcNodePortId, trgNodePortId, srcNode, trgNode, this.ren.activePipeline.links);
+				return CanvasUtils.isDataConnectionAllowed(srcNodePortId, trgNodePortId, srcNode, trgNode,
+					this.ren.activePipeline.links, this.ren.config.enableSelfRefLinks);
 
 			} else if (this.drawingNewLinkData.action === ASSOCIATION_LINK) {
 				const srcNode = this.drawingNewLinkData.srcNode;

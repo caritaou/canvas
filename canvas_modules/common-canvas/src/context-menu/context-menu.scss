@@ -24,9 +24,9 @@
 	background-clip: padding-box;
 	border: 0;
 	outline: none;
-	-moz-box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.2);
-	-webkit-box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.2);
-	box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.2);
+	-moz-box-shadow: $spacing-01 $spacing-01 $spacing-01 rgba(0, 0, 0, 0.2);
+	-webkit-box-shadow: $spacing-01 $spacing-01 $spacing-01 rgba(0, 0, 0, 0.2);
+	box-shadow: $spacing-01 $spacing-01 $spacing-01 rgba(0, 0, 0, 0.2);
 	position: absolute;
 
 	// For cascaded sub-menu
@@ -50,7 +50,8 @@
 	text-align: inherit;
 	white-space: nowrap;
 	background: 0 0;
-	border: 0;
+	border:  2px solid transparent;
+	outline: none; /* Suppress Chrome's blue active border */
 	display: flex;
 	align-items: center;
 	position: relative; // Needed to allow sub-menu, if there is one,  to be positioned correctly
@@ -61,19 +62,20 @@
 	}
 
 	&:active,
-	&:focus,
 	&:hover {
 		background: $layer-hover-01;
-		text-decoration: none;
-		border: 0;
-		outline: none; /* Suppress Chrome's blue active border */
+	}
+
+	&:focus {
+		background: $layer-hover-01;
+		border:  2px solid $focus;
 	}
 
 	/* Style for the chevron '>' in menu item that opens a submenu. */
 	& svg {
 		color: $text-primary;
 		position: absolute;
-		right: 12px;
+		right: $spacing-04;
 	}
 }
 

@@ -16,6 +16,7 @@
 
 import React from "react";
 import PropTypes from "prop-types";
+import ReactResizeDetector from "react-resize-detector";
 import PropertiesModal from "./../components/properties-modal";
 import PropertiesEditor from "./../components/properties-editor";
 import TearSheet from "../panels/tearsheet";
@@ -37,7 +38,7 @@ import TitleEditor from "./../components/title-editor";
 import classNames from "classnames";
 
 import { injectIntl } from "react-intl";
-import styles from "./properties-main-widths.scss";
+import styles from "./properties-main-widths.module.scss";
 
 const FLYOUT_WIDTH_SMALL = parseInt(styles.flyoutWidthSmall, 10);
 const FLYOUT_WIDTH_MEDIUM = parseInt(styles.flyoutWidthMedium, 10);
@@ -66,10 +67,12 @@ class PropertiesMain extends React.Component {
 			buttonIconHandler: props.callbacks.buttonIconHandler,
 			validationHandler: props.callbacks.validationHandler,
 			titleChangeHandler: props.callbacks.titleChangeHandler,
-			tooltipLinkHandler: props.callbacks.tooltipLinkHandler
+			tooltipLinkHandler: props.callbacks.tooltipLinkHandler,
+			propertyIconHandler: props.callbacks.propertyIconHandler,
 		});
 		this.setForm(props.propertiesInfo, false);
 		this.previousErrorMessages = {};
+		this.flyoutWidths = [FLYOUT_WIDTH_SMALL, FLYOUT_WIDTH_MEDIUM, FLYOUT_WIDTH_LARGE, FLYOUT_WIDTH_MAX];
 		// this has to be after setForm because setForm clears all error messages.
 		// Validate all validationDefinitions but show warning messages for "colDoesExists" condition only
 		this.propertiesController.validatePropertiesValues(false);
@@ -85,7 +88,8 @@ class PropertiesMain extends React.Component {
 		const editorSize = this.getEditorSize();
 		this.state = {
 			showPropertiesButtons: true,
-			editorSize: editorSize
+			editorSize: editorSize,
+			containerWidth: FLYOUT_WIDTH_SMALL
 		};
 		this.applyPropertiesEditing = this.applyPropertiesEditing.bind(this);
 		this.showPropertiesButtons = this.showPropertiesButtons.bind(this);
@@ -448,6 +452,10 @@ class PropertiesMain extends React.Component {
 		}
 	}
 
+	detectResize(width) {
+		this.setState({ containerWidth: width });
+	}
+
 	render() {
 		const applyOnBlurEnabled = this.props.propertiesConfig.applyOnBlur && this.props.propertiesConfig.rightFlyout;
 		let cancelHandler = this.cancelHandler.bind(this, CANCEL);
@@ -477,6 +485,7 @@ class PropertiesMain extends React.Component {
 					icon={formData.icon}
 					heading={formData.heading}
 					showHeading={this.props.propertiesConfig.heading}
+					titleInfo={formData.title}
 					rightFlyoutTabsView={this.props.propertiesConfig.categoryView === CATEGORY_VIEW.TABS}
 				/>);
 
@@ -491,7 +500,13 @@ class PropertiesMain extends React.Component {
 					showPropertiesButtons={this.state.showPropertiesButtons}
 					disableSaveOnRequiredErrors={this.props.propertiesConfig.disableSaveOnRequiredErrors}
 				/>);
-				if (this._isResizeButtonRequired()) {
+				// Show Resize Button only under below conditions
+				// 1. Flyout is not dragged to resize its width.
+				// 2. If Flyout is dragged back to its smallest width.
+				// If pixel_width is set include that to test if button should be shown.
+				const widthArr = [...this.flyoutWidths, this._getOverrideSize()];
+				const allowedWidth = widthArr.includes(this.state.containerWidth);
+				if (this._isResizeButtonRequired() && allowedWidth) {
 					const resizeIcon = this._getResizeButton();
 					// Resize button label can be "Expand" or "Contract"
 					const resizeBtnLabel = (resizeIcon.props && resizeIcon.props.className === "properties-resize-caret-left")
@@ -569,33 +584,49 @@ class PropertiesMain extends React.Component {
 					{editorForm}
 				</PropertiesModal>);
 			}
+
+			let propertiesSizeClassname = `properties-${this.state.editorSize}`;
+
+			const overrideSize = this._getOverrideSize();
+			let overrideStyle = null;
+			if (overrideSize !== null) {
+				// Add custom classname when custom editor size is set
+				propertiesSizeClassname = "properties-custom-size";
+				overrideStyle = { width: overrideSize + "px" };
+			}
+
 			const className = classNames("properties-wrapper",
 				{
 					"properties-right-flyout": this.props.propertiesConfig.rightFlyout,
 					"properties-light-enabled": this.props.light,
 					"properties-light-disabled": !this.props.light
 				},
-				`properties-${this.state.editorSize}`);
-			const overrideSize = this._getOverrideSize();
-			let overrideStyle = null;
-			if (overrideSize !== null) {
-				overrideStyle = { width: overrideSize + "px" };
-			}
+				propertiesSizeClassname);
 			return (
 				<Provider store={this.propertiesController.getStore()}>
-					<aside
-						aria-label={PropertyUtils.formatMessage(this.props.intl, MESSAGE_KEYS.PROPERTIES_LABEL, { label: propertiesLabel })}
-						role="complementary"
-						ref={ (ref) => (this.commonProperties = ref) }
-						className={className}
-						onBlur={this.onBlur}
-						style={overrideStyle}
+					<ReactResizeDetector
+						handleWidth
+						refreshMode="debounce"
+						refreshRate={500}
+						onResize={(width) => this.detectResize(width)}
+						targetRef={this.commonProperties}
 					>
-						{resizeBtn}
-						{propertiesTitle}
-						{propertiesDialog}
-						{buttonsContainer}
-					</aside>
+						<div className="properties-right-flyout-container">
+							<aside
+								aria-label={PropertyUtils.formatMessage(this.props.intl, MESSAGE_KEYS.PROPERTIES_LABEL, { label: propertiesLabel })}
+								role="complementary"
+								ref={ (ref) => (this.commonProperties = ref) }
+								className={className}
+								onBlur={this.onBlur}
+								style={overrideStyle}
+							>
+								{propertiesTitle}
+								{propertiesDialog}
+								{buttonsContainer}
+							</aside>
+							{resizeBtn}
+						</div>
+					</ReactResizeDetector>
 				</Provider>
 			);
 		}
@@ -643,7 +674,8 @@ PropertiesMain.propTypes = {
 		validationHandler: PropTypes.func,
 		titleChangeHandler: PropTypes.func,
 		propertiesActionLabelHandler: PropTypes.func,
-		tooltipLinkHandler: PropTypes.func
+		tooltipLinkHandler: PropTypes.func,
+		propertyIconHandler: PropTypes.func,
 	}),
 	customPanels: PropTypes.array, // array of custom panels
 	customControls: PropTypes.array, // array of custom controls

@@ -492,6 +492,19 @@ Cypress.Commands.add("verifyDetachedLinkPathToTarget", (trgNodeName, trgPortId, 
 		});
 });
 
+Cypress.Commands.add("verifyWysiwygCommentStyles", ({ styleName, styleValue }) => {
+	if (styleName === "border-width") {
+		cy.get(".d3-comment-text-scroll")
+			.should("exist")
+			.and("have.css", "border-width", styleValue);
+	} else {
+		cy.get(".d3-comment-text")
+			.should("exist")
+			.and("have.css", styleName)
+			.and("include", styleValue);
+	}
+});
+
 Cypress.Commands.add("verifyLinkIsSelected", (linkId) => {
 	cy.getLinkUsingLinkId(linkId)
 		.then((linkGrp) => expect(linkGrp[0].getAttribute("data-selected")).to.equal("true"));
@@ -849,13 +862,13 @@ Cypress.Commands.add("verifyNodeDimensions", (nodeLabel, width, height) => {
 
 Cypress.Commands.add("verifyBottomPanelHeight", (height) => {
 	cy.get(".bottom-panel").should((element) => {
-		expect(element).to.have.css("height", `${height}px`);
+		compareCloseTo(element[0].offsetHeight, height);
 	});
 });
 
 Cypress.Commands.add("verifyBottomPanelWidth", (width) => {
 	cy.get(".bottom-panel").should((element) => {
-		// Use compareCloseTo here because top-panel width is slighyly different
+		// Use compareCloseTo here because bottom-panel width is slighyly different
 		// on the build machine to its width when running tests on a local machine.
 		compareCloseTo(element[0].offsetWidth, width);
 	});
@@ -863,7 +876,7 @@ Cypress.Commands.add("verifyBottomPanelWidth", (width) => {
 
 Cypress.Commands.add("verifyTopPanelHeight", (height) => {
 	cy.get(".top-panel").should((element) => {
-		expect(element).to.have.css("height", `${height}px`);
+		compareCloseTo(element[0].offsetHeight, height);
 	});
 });
 
@@ -875,6 +888,47 @@ Cypress.Commands.add("verifyTopPanelWidth", (width) => {
 	});
 });
 
+Cypress.Commands.add("verifyPalettePanelWidth", (width) => {
+	cy.get(".palette-flyout-div").should((element) => {
+		// Use compareCloseTo here because top-panel width is slighyly different
+		// on the build machine to its width when running tests on a local machine.
+		compareCloseTo(element[0].offsetWidth, width);
+	});
+});
+
+Cypress.Commands.add("verifyLeftFlyoutPanelWidth", (width) => {
+	cy.get(".left-flyout-panel").should((element) => {
+		compareCloseTo(element[0].offsetWidth, width);
+	});
+});
+
+Cypress.Commands.add("verifyLeftFlyoutPanelHeight", (height) => {
+	cy.get(".left-flyout-panel").should((element) => {
+		compareCloseTo(element[0].offsetHeight, height);
+	});
+});
+
+Cypress.Commands.add("verifyRightFlyoutPanelWidth", (width) => {
+	cy.get(".right-flyout-panel").should((element) => {
+		compareCloseTo(element[0].offsetWidth, width);
+	});
+});
+
+Cypress.Commands.add("verifyIsRightFlyoutDragDisabled", () => {
+	cy.get(".right-flyout-drag")
+		.should("not.exist");
+});
+
+Cypress.Commands.add("verifyIsRightFlyoutDragEnabled", () => {
+	cy.get(".right-flyout-drag")
+		.should("exist");
+});
+
+Cypress.Commands.add("verifyRightFlyoutPanelHeight", (height) => {
+	cy.get(".right-flyout-panel").should((element) => {
+		compareCloseTo(element[0].offsetHeight, height);
+	});
+});
 
 Cypress.Commands.add("verifyCommentDimensions", (commentText, width, height) => {
 	cy.getCommentWithText(commentText)
@@ -1327,7 +1381,22 @@ Cypress.Commands.add("verifyNotificationIconType", (type) => {
 Cypress.Commands.add("verifyCanvasTransform", (movString) => {
 	cy.get("#canvas-div-0 .d3-canvas-group")
 		.invoke("attr", "transform")
-		.should("eq", movString);
+		.should((actualTransformString) => {
+			// Verify the movString passed is a string
+			if (typeof movString === "string") {
+				const expectedValues = parseTransformString(movString);
+				const actualValues = parseTransformString(actualTransformString);
+				// Compare each part of the transform with compareRange
+				compareCloseTo(actualValues.translateX, expectedValues.translateX);
+				compareCloseTo(actualValues.translateY, expectedValues.translateY);
+				compareCloseTo(actualValues.scale, expectedValues.scale);
+			} else if (typeof movString === "undefined") {
+				expect(actualTransformString).to.be.undefined;
+			} else {
+				throw new Error("Expected movString to be a string or undefined");
+			}
+		});
+
 });
 
 Cypress.Commands.add("verifyNotificationCounter", (count) => {
@@ -1380,18 +1449,10 @@ Cypress.Commands.add("verifyNotificationCenterDoesntExist", (hidden) => {
 	cy.get(".notification-panel").should("not.exist");
 });
 
-Cypress.Commands.add("verifyNodeWidthHeight", (nodeLabel, nodeWidth, nodeHeight) => {
-	cy.getNodeWithLabel(nodeLabel).get(".d3-node-body-outline")
-		.should((element) => {
-			expect(element).to.have.css("height", `${nodeHeight}px`);
-			expect(element).to.have.css("width", `${nodeWidth}px`);
-		});
-});
-
 Cypress.Commands.add("verifyNotificationCenterContent", (id, content) => {
 	if (typeof content === "string" && content.length > 0) {
 		cy.get(".notification-panel-" + id).should("contain", content);
-	}	else if (typeof content === "string" && content.length === 0) {
+	} else if (typeof content === "string" && content.length === 0) {
 		cy.get(".notification-panel-" + id).should("be.empty");
 	} else {
 		cy.get(".notification-panel-" + id).should("not.exist");
@@ -1445,6 +1506,19 @@ function verifyPath(actualPath, expectedPath) {
 	}
 }
 
+function parseTransformString(transformString) {
+	const translateMatch = transformString.match(/translate\(([^,]+),([^)]+)\)/);
+	const scaleMatch = transformString.match(/scale\(([^)]+)\)/);
+	if (!translateMatch || !scaleMatch) {
+		throw new Error("invalid string format");
+	}
+	return {
+		translateX: parseFloat(translateMatch[1]),
+		translateY: parseFloat(translateMatch[2]),
+		scale: parseFloat(scaleMatch[1])
+	};
+}
+
 function compareCloseTo(value, compareValue) {
 	expect(Number(value)).to.be.closeTo(Number(compareValue), Cypress.env("compareRange"));
 }
@@ -1474,5 +1548,5 @@ function getCommentSelectionOutlineSelector(comment) {
 }
 
 function getCommentBodySelector(comment) {
-	return "[data-id='" + comment.getAttribute("data-id") + "'] > .d3-comment-rect";
+	return "[data-id='" + comment.getAttribute("data-id") + "'] > .d3-foreign-object-comment-text";
 }

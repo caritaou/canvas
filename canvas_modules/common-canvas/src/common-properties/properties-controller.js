@@ -43,7 +43,8 @@ export default class PropertiesController {
 			buttonHandler: null,
 			buttonIconHandler: null,
 			titleChangeHandler: null,
-			tooltipLinkHandler: null
+			tooltipLinkHandler: null,
+			propertyIconHandler: null
 		};
 		this.propertiesConfig = {};
 		this.visibleDefinitions = {};
@@ -170,7 +171,8 @@ export default class PropertiesController {
 			this._parseUiConditions();
 			// should be done before running any validations
 			const controls = [];
-			UiConditionsParser.parseControls(controls, this.actions, this.form);
+			UiConditionsParser.parseControls(controls, this.actions, this.form); // parse form uiItems
+			UiConditionsParser.parseControls(null, this.actions, { uiItems: this.form.titleUiItems }); // parse title_info uiItems
 			this.saveControls(controls); // saves controls without the subcontrols
 			this._parseSummaryControls(controls);
 			this.parsePanelTree();
@@ -540,8 +542,8 @@ export default class PropertiesController {
 		} else if (subControl.valueDef.propType === "enum") {
 			val = subControl.values[0];
 		} else if (subControl.valueDef.propType === "integer" ||
-								subControl.valueDef.propType === "long" ||
-								subControl.valueDef.propType === "double") {
+			subControl.valueDef.propType === "long" ||
+			subControl.valueDef.propType === "double") {
 			val = 0;
 		} else if (subControl.valueDef.propType === "structure") {
 			val = {};
@@ -1113,6 +1115,15 @@ export default class PropertiesController {
 	getPropertyValue(inPropertyId, options, defaultValue) {
 		const propertyId = this.convertPropertyId(inPropertyId);
 		const propertyValue = this.propertiesStore.getPropertyValue(propertyId);
+		let parsedValue;
+		if (Array.isArray(propertyValue)) {
+			parsedValue = propertyValue.map((itm) => itm);
+		} else if (propertyValue && typeof propertyValue === "object") {
+			// Shallow copy for objects
+			parsedValue = { ...propertyValue };
+		} else {
+			parsedValue = propertyValue;
+		}
 		let filteredValue = defaultValue;
 
 		// don't return hidden/disabled values
@@ -1164,7 +1175,7 @@ export default class PropertiesController {
 		if (options && options.applyProperties === true) {
 			return this._convertObjectStructure(propertyId, propertyValue);
 		}
-		return propertyValue;
+		return parsedValue;
 	}
 
 	removePropertyValue(inPropertyId) {
@@ -1260,7 +1271,7 @@ export default class PropertiesController {
 
 		this.propertiesStore.setPropertyValues(inValues);
 
-		if (options && options.isInitProps) {
+		if (options?.isInitProps || options?.setDefaultValues) {
 			// Evaluate conditional defaults based on current_parameters upon loading of view
 			// For a given parameter_ref, if multiple conditions evaluate to true only the first one is used.
 			const conditionalDefaultValues = {};
@@ -1277,7 +1288,7 @@ export default class PropertiesController {
 							const control = this.getControl({ name: parameterRef });
 							if (PropertyUtils.isSubControlStructureObjectType(control)) {
 								conditionalDefaultValues[parameterRef] =
-								PropertyUtils.convertObjectStructureToArray(control.valueDef.isList, control.subControls, conditionalDefaultValues[parameterRef]);
+									PropertyUtils.convertObjectStructureToArray(control.valueDef.isList, control.subControls, conditionalDefaultValues[parameterRef]);
 							}
 							this.propertiesStore.updatePropertyValue({ name: parameterRef }, conditionalDefaultValues[parameterRef]);
 						}
@@ -2043,7 +2054,7 @@ export default class PropertiesController {
 			});
 			const isDifference = consecutiveAry.every((value) => value === 1);
 			if (isDifference && ((staticRows.includes(0) && !staticRows.includes(controlValue.length - 1)) ||
-			(!staticRows.includes(0) && staticRows.includes(controlValue.length - 1)))) {
+				(!staticRows.includes(0) && staticRows.includes(controlValue.length - 1)))) {
 				isValid = true;
 			} else {
 				isValid = false;

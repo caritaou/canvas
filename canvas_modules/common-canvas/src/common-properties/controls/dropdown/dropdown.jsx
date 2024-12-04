@@ -54,6 +54,8 @@ class DropDown extends React.Component {
 		this.genSelectOptions = this.genSelectOptions.bind(this);
 		this.genFieldSelectOptions = this.genFieldSelectOptions.bind(this);
 		this.updateValueFromFilterEnum = this.updateValueFromFilterEnum.bind(this);
+		this.getItemIcon = this.getItemIcon.bind(this);
+		this.renderItem = this.renderItem.bind(this);
 	}
 
 	componentDidMount() {
@@ -85,6 +87,20 @@ class DropDown extends React.Component {
 		}
 
 		return selectedOption;
+	}
+
+	getItemIcon(enumValue) {
+		const propertyIconHandler = this.props.controller.getHandlers().propertyIconHandler;
+		let callbackIcon;
+		if (propertyIconHandler) {
+			propertyIconHandler({
+				propertyId: this.props.propertyId,
+				enumValue: enumValue
+			}, (appIcon) => {
+				callbackIcon = appIcon;
+			});
+		}
+		return callbackIcon;
 	}
 
 	genSchemaSelectOptions(selectedValue) {
@@ -169,7 +185,7 @@ class DropDown extends React.Component {
 	}
 
 	handleComboOnChange(evt) {
-		let value = evt.selectedItem && evt.selectedItem.value ? evt.selectedItem.value : "";
+		let value = evt.selectedItem && evt.selectedItem.value ? evt.selectedItem.value : evt.selectedItem;
 		if (this.props.control.controlType === ControlType.SELECTCOLUMN) {
 			value = PropertyUtils.fieldStringToValue(value, this.props.control, this.props.controller);
 		}
@@ -189,6 +205,20 @@ class DropDown extends React.Component {
 			const value = evt;
 			this.props.controller.updatePropertyValue(this.props.propertyId, value);
 		}
+	}
+
+	// Filter Oneofselect items as per entered input.
+	filterItems(list) {
+		return list?.item?.label?.toLowerCase().includes(list?.inputValue?.toLowerCase());
+	}
+
+	renderItem(item) {
+		return item ? (
+			<div className="properties-dropdown-label">
+				<div className="custom-icon-label">{ item.label }</div>
+				{ this.getItemIcon(item.value) }
+			</div>
+		) : "";
 	}
 
 	render() {
@@ -229,6 +259,7 @@ class DropDown extends React.Component {
 					onChange={this.handleChange}
 					value={selection}
 					helperText={this.props.control.helperText}
+					readOnly={this.props.readOnly}
 				>
 					{ options }
 				</Select>
@@ -248,6 +279,7 @@ class DropDown extends React.Component {
 					translateWithId={(id) => listBoxMenuIconTranslationIds[id]}
 					titleText={this.props.controlItem}
 					helperText={this.props.control.helperText}
+					shouldFilterItem={this.filterItems}
 				/>
 			);
 		} else {
@@ -258,12 +290,16 @@ class DropDown extends React.Component {
 					disabled={this.props.state === STATES.DISABLED || this.disableEmptyListDropdown}
 					type="default"
 					items={dropDown.options}
+					itemToString={(item) => (item ? item.label : "")}
+					itemToElement={this.renderItem}
+					renderSelectedItem={this.renderItem}
 					onChange={this.handleChange}
 					selectedItem={dropDown.selectedOption}
 					label={this.emptyLabel}
 					translateWithId={(id) => listBoxMenuIconTranslationIds[id]}
 					titleText={this.props.controlItem}
 					helperText={this.props.control.helperText}
+					readOnly={this.props.readOnly}
 				/>
 			);
 		}
@@ -294,7 +330,8 @@ DropDown.propTypes = {
 		PropTypes.string,
 		PropTypes.object
 	]), // pass in by redux
-	messageInfo: PropTypes.object // pass in by redux
+	messageInfo: PropTypes.object, // pass in by redux
+	readOnly: PropTypes.bool
 };
 
 const mapStateToProps = (state, ownProps) => {

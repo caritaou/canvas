@@ -16,11 +16,12 @@
 
 import React from "react";
 import PropTypes from "prop-types";
-import { InlineLoading } from "@carbon/react";
+import { AccordionItem, InlineLoading } from "@carbon/react";
+import { get } from "lodash";
 import SVG from "react-inlinesvg";
 import { TIP_TYPE_PALETTE_CATEGORY } from "../common-canvas/constants/canvas-constants.js";
-import { get } from "lodash";
-import { AccordionItem } from "@carbon/react";
+import CanvasUtils from "../common-canvas/common-canvas-utils.js";
+import KeyboardUtils from "../common-canvas/keyboard-utils.js";
 import PaletteContentList from "./palette-content-list.jsx";
 
 
@@ -49,7 +50,7 @@ class PaletteFlyoutContentCategory extends React.Component {
 	}
 
 	getDisplayLabel() {
-		if (this.props.isPaletteOpen === true) {
+		if (this.props.isPaletteWide === true) {
 			return this.props.category.label;
 
 		// With narrow palette, if there's no image just display first 3 letters
@@ -68,7 +69,7 @@ class PaletteFlyoutContentCategory extends React.Component {
 		// InlineLoading component.
 
 		let description = "";
-		if (this.props.isPaletteOpen) {
+		if (this.props.isPaletteWide) {
 			description = this.props.category.loading_text;
 		}
 
@@ -139,7 +140,7 @@ class PaletteFlyoutContentCategory extends React.Component {
 	getItemText() {
 		let itemText = null;
 		const label = this.getDisplayLabel();
-		if (this.props.isPaletteOpen === true) {
+		if (this.props.isPaletteWide) {
 			const className = this.props.category.image ? "palette-flyout-category-text" : "palette-flyout-category-text-no-image";
 			itemText = (
 				<span className={className}>
@@ -170,7 +171,7 @@ class PaletteFlyoutContentCategory extends React.Component {
 			} else if (this.props.category.image.endsWith(".svg")) {
 				itemImage = (
 					<div>
-						<SVG src={this.props.category.image} className="palette-flyout-category-item-icon" draggable="false" />
+						<SVG src={this.props.category.image} className="palette-flyout-category-item-icon" draggable="false" aria-hidden="true" />
 					</div>
 				);
 			} else {
@@ -192,13 +193,15 @@ class PaletteFlyoutContentCategory extends React.Component {
 	getContent() {
 		if (this.props.category.is_open) {
 			const nodeTypeInfos = this.props.category.node_types.map((nt) => ({ nodeType: nt, category: this.props.category }));
+			this.pclRef = React.createRef();
 			return (
 				<PaletteContentList
+					ref={this.pclRef}
 					key={this.props.category.id + "-nodes"}
 					category={this.props.category}
 					nodeTypeInfos={nodeTypeInfos}
 					canvasController={this.props.canvasController}
-					isPaletteOpen={this.props.isPaletteOpen}
+					isPaletteWide={this.props.isPaletteWide}
 					isEditingEnabled={this.props.isEditingEnabled}
 				/>
 			);
@@ -216,11 +219,14 @@ class PaletteFlyoutContentCategory extends React.Component {
 
 	categoryKeyPressed(evt) {
 		if (evt.target.className === "cds--accordion__heading") {
-			if (evt.code === "Enter" || evt.code === "Space") {
-				evt.preventDefault();
-				evt.stopPropagation();
-
+			if (KeyboardUtils.openCategory(evt)) {
 				this.setPaletteCategory(this.props.category.is_open);
+				CanvasUtils.stopPropagationAndPreventDefault(evt);
+
+			} else if (this.props.category.is_open &&
+						KeyboardUtils.fromCategoryToFirstNode(evt)) {
+				this.pclRef.current.setFirstNode();
+				CanvasUtils.stopPropagationAndPreventDefault(evt);
 			}
 		}
 	}
@@ -235,7 +241,7 @@ class PaletteFlyoutContentCategory extends React.Component {
 PaletteFlyoutContentCategory.propTypes = {
 	category: PropTypes.object.isRequired,
 	canvasController: PropTypes.object.isRequired,
-	isPaletteOpen: PropTypes.bool.isRequired,
+	isPaletteWide: PropTypes.bool,
 	isEditingEnabled: PropTypes.bool.isRequired,
 };
 

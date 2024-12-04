@@ -24,7 +24,7 @@ import { Button } from "@carbon/react";
 import classNames from "classnames";
 import { isEqual, concat } from "lodash";
 import ValidationMessage from "./../../components/validation-message";
-import WideFlyout from "./../../components/wide-flyout";
+import TearSheet from "../../panels/tearsheet/index.js";
 import { formatMessage } from "./../../util/property-utils";
 import ExpressionBuilder from "./expression-builder/expression-builder";
 import { MESSAGE_KEYS, CONDITION_MESSAGE_TYPE, DEFAULT_VALIDATION_MESSAGE } from "./../../constants/constants";
@@ -87,12 +87,9 @@ class ExpressionControl extends React.Component {
 	// this is needed to ensure expression builder selection works.
 	componentDidUpdate(prevProps) {
 		// When code is edited in expression builder, reflect changes in expression flyout
-		if (!isEqual(this.getCodemirrorState()?.doc.toString(), this.props.value)) {
-			this.editor.dispatch({ changes: { from: 0, to: this.getCodemirrorState()?.doc.length, insert: this.props.value } });
-		}
 		// Toggle editable mode in Codemirror editor
 		if (!isEqual(prevProps.state, this.props.state)) {
-			this.setCodeMirrorEditable(!(this.props.state === STATES.DISABLED));
+			this.setCodeMirrorEditable(!(this.props.state === STATES.DISABLED) || !this.props.readOnly);
 		}
 		if (
 			this.props.selectionRange &&
@@ -103,7 +100,17 @@ class ExpressionControl extends React.Component {
 			this.props.selectionRange.forEach((selected) => {
 				this.editor.dispatch({ selection: selected });
 			});
-			this.editor.focus();
+		}
+		if (!isEqual(prevProps.value, this.props.value)) {
+			const selection = this.editor.state.selection.main;
+			this.editor.dispatch({
+				changes: {
+					from: 0,
+					to: this.getCodemirrorState()?.doc?.length,
+					insert: this.props.value },
+				selection: {
+					anchor: selection.anchor,
+					head: selection.head } });
 		}
 	}
 
@@ -206,7 +213,7 @@ class ExpressionControl extends React.Component {
 				language,
 				placeholder(this.props.control.additionalText),
 				this.handleUpdate(),
-				this.editable.of(EditorView.editable.of(!(this.props.state === STATES.DISABLED)))
+				this.editable.of(EditorView.editable.of(!(this.props.state === STATES.DISABLED || this.props.readOnly)))
 			],
 			parent: this.editorRef.current
 		});
@@ -319,14 +326,13 @@ class ExpressionControl extends React.Component {
 		}
 
 		const reactIntl = this.props.controller.getReactIntl();
-		const Calculator24 = React.forwardRef((props, ref) => <Calculator ref={ref} size={24} {...props} />);
 
 		const button = this._showBuilderButton() ? (
 			<Button kind="ghost" size="sm"
 				className="properties-expression-button"
-				disabled={this.props.state === STATES.DISABLED}
+				disabled={this.props.state === STATES.DISABLED || this.props.readOnly}
 				onClick={this.showExpressionBuilder}
-				renderIcon={Calculator24}
+				renderIcon={Calculator}
 				iconDescription={formatMessage(reactIntl, MESSAGE_KEYS.EXPRESSION_BUILDER_ICON_DESCRIPTION)}
 				tooltipPosition="right"
 				hasIconOnly
@@ -345,7 +351,12 @@ class ExpressionControl extends React.Component {
 			: formatMessage(reactIntl, MESSAGE_KEYS.EXPRESSION_VALIDATE_LABEL);
 		const validateLink = this.hasValidate() && this.props.validateLink ? (
 			<div className="properties-expression-validate" disabled={this.props.state === STATES.DISABLED}>
-				<Button className="validateLink" kind="ghost" onClick={this.handleValidate} disabled={this.props.state === STATES.DISABLED || this.state.validationInProgress}>
+				<Button
+					className="validateLink"
+					kind="ghost"
+					onClick={this.handleValidate}
+					disabled={this.props.state === STATES.DISABLED || this.state.validationInProgress || this.props.readOnly}
+				>
 					{validateLabel}
 				</Button>
 				{validateIcon}
@@ -356,15 +367,7 @@ class ExpressionControl extends React.Component {
 		const rejectLabel = formatMessage(reactIntl, MESSAGE_KEYS.REJECTBUTTON_LABEL);
 		const expressonTitle = formatMessage(reactIntl, MESSAGE_KEYS.EXPRESSION_BUILDER_TITLE);
 
-		const flyout = this.state.showExpressionBuilder ? (<WideFlyout
-			cancelHandler={this.cancelExpressionBuilder}
-			okHandler={this.hideExpressionBuilder}
-			show={this.state.showExpressionBuilder}
-			applyLabel={applyLabel}
-			rejectLabel={rejectLabel}
-			title={expressonTitle}
-			light={this.props.controller.getLight() && this.props.control.light}
-		>
+		const expBuilder = (
 			<div>
 				<ExpressionBuilder
 					control={this.props.control}
@@ -372,7 +375,21 @@ class ExpressionControl extends React.Component {
 					propertyId={this.props.propertyId}
 				/>
 			</div>
-		</WideFlyout>) : null;
+		);
+
+		const flyout = this.state.showExpressionBuilder ? (<TearSheet
+			open
+			onCloseCallback={this.cancelExpressionBuilder}
+			okHandler={this.hideExpressionBuilder}
+			cancelHandler={this.cancelExpressionBuilder}
+			showPropertiesButtons
+			applyLabel={applyLabel}
+			rejectLabel={rejectLabel}
+			tearsheet={{
+				title: expressonTitle,
+				content: expBuilder
+			}}
+		/>) : null;
 
 		const className = classNames(`properties-expression-editor ${messageType}`,
 			{ "properties-light-disabled": !this.props.control.light || !this.props.controller.getLight() });
@@ -413,7 +430,7 @@ class ExpressionControl extends React.Component {
 					<div ref={ (ref) => (this.expressionEditorDiv = ref) } data-id={ControlUtils.getDataId(this.props.propertyId)}
 						className={className}
 					>
-						<div className={codemirrorClassName} ref={this.editorRef} style={{ height: this.state.expressionEditorHeight }} />
+						<div className={codemirrorClassName} ref={this.editorRef} style={{ height: this.state.expressionEditorHeight, minHeight: minLineHeight }} />
 						<ValidationMessage state={this.props.state} messageInfo={messageInfo} inTable={this.props.tableControl} />
 					</div>
 				</div>
@@ -442,7 +459,8 @@ ExpressionControl.propTypes = {
 	height: PropTypes.number, // height in px
 	state: PropTypes.string, // pass in by redux
 	value: PropTypes.string, // pass in by redux
-	messageInfo: PropTypes.object // pass in by redux
+	messageInfo: PropTypes.object, // pass in by redux
+	readOnly: PropTypes.bool
 };
 
 ExpressionControl.defaultProps = {

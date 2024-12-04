@@ -523,9 +523,8 @@ class FlexibleTable extends React.Component {
 
 		const containerClass = this.props.showHeader ? "properties-ft-container-absolute " : "properties-ft-container-absolute-noheader ";
 		const messageClass = (!this.props.messageInfo) ? containerClass + STATES.INFO : containerClass;
-		// We don't show TableToolbar for Fieldpicker, applying appropriate header styles for fieldpicker table
 		const ftHeaderClassname = classNames("properties-ft-table-header",
-			{ "no-rows-selected": this.props.selectedRows?.length === 0, "fieldpicker-table": this.props.scrollKey === "field-picker" });
+			{ "single-row-selection-table": this.props.rowSelection === ROW_SELECTION.SINGLE });
 		// When topRightPanel has Add button, it has this.props.topRightPanel.props.className = "properties-at-buttons-container"
 		const topRightPanelHasTableToolbar = (typeof this.props.topRightPanel !== "undefined" && this.props.topRightPanel !== null &&
 			typeof this.props.topRightPanel.props.className === "undefined");
@@ -589,6 +588,7 @@ class FlexibleTable extends React.Component {
 									sortDirection={this.state.columnSortDir[this.state.currentSortColumn]}
 									tableState={this.props.tableState}
 									light={this.props.light}
+									readOnly={this.props.readOnly}
 									{...(scrollIndex !== -1 && { scrollToIndex: scrollIndex, scrollToAlignment: "center" })}
 								/>
 							</div>
@@ -638,7 +638,8 @@ FlexibleTable.propTypes = {
 	rowSelection: PropTypes.string,
 	summaryTable: PropTypes.bool,
 	light: PropTypes.bool,
-	intl: PropTypes.object.isRequired
+	intl: PropTypes.object.isRequired,
+	readOnly: PropTypes.bool
 };
 
 export default injectIntl(FlexibleTable);

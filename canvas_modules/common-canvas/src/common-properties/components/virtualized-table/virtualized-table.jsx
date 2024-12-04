@@ -214,6 +214,7 @@ class VirtualizedTable extends React.Component {
 					checked={this.props.checkedAll}
 					labelText={translatedHeaderCheckboxLabel}
 					hideLabel
+					readOnly={this.props.readOnly}
 				/>
 			</div>)
 			: "";
@@ -353,19 +354,22 @@ class VirtualizedTable extends React.Component {
 	}
 
 	overSelectOption(evt) {
-		// Differentiate between mouse and keyboard event
-		if (evt.type === "mouseenter" && !this.keyBoardEventCalled) {
-			this.mouseEventCalled = true;
-			this.isOverSelectOption = !this.isOverSelectOption;
-		} else if (evt.type === "mouseleave" && this.mouseEventCalled) {
-			this.mouseEventCalled = false;
-			this.isOverSelectOption = !this.isOverSelectOption;
-		} else if (evt.type === "focus" && !this.mouseEventCalled) {
-			this.keyBoardEventCalled = true;
-			this.isOverSelectOption = !this.isOverSelectOption;
-		} else if (evt.type === "blur" && this.keyBoardEventCalled) {
-			this.keyBoardEventCalled = false;
-			this.isOverSelectOption = !this.isOverSelectOption;
+		// Incase of readonly table disable all events
+		if (!this.props.readOnly) {
+			// Differentiate between mouse and keyboard event
+			if (evt.type === "mouseenter" && !this.keyBoardEventCalled) {
+				this.mouseEventCalled = true;
+				this.isOverSelectOption = !this.isOverSelectOption;
+			} else if (evt.type === "mouseleave" && this.mouseEventCalled) {
+				this.mouseEventCalled = false;
+				this.isOverSelectOption = !this.isOverSelectOption;
+			} else if (evt.type === "focus" && !this.mouseEventCalled) {
+				this.keyBoardEventCalled = true;
+				this.isOverSelectOption = !this.isOverSelectOption;
+			} else if (evt.type === "blur" && this.keyBoardEventCalled) {
+				this.keyBoardEventCalled = false;
+				this.isOverSelectOption = !this.isOverSelectOption;
+			}
 		}
 	}
 
@@ -374,7 +378,6 @@ class VirtualizedTable extends React.Component {
 		let selectOption = "";
 		let selectedRow = false;
 		const rowDisabled = typeof rowData.disabled === "boolean" ? rowData.disabled : false;
-
 		if (typeof this.props.rowHeight === "function" && this.props.rowHeight({ index }) === 0) {
 			return null;
 		}
@@ -407,6 +410,7 @@ class VirtualizedTable extends React.Component {
 						hideLabel
 						checked={rowSelected}
 						disabled={rowDisabled}
+						readOnly={this.props.readOnly}
 					/>
 				</div>);
 			}
@@ -552,7 +556,8 @@ VirtualizedTable.propTypes = {
 	scrollKey: PropTypes.string,
 	tableState: PropTypes.string,
 	light: PropTypes.bool,
-	intl: PropTypes.object.isRequired
+	intl: PropTypes.object.isRequired,
+	readOnly: PropTypes.bool
 };
 
 export default injectIntl(VirtualizedTable);

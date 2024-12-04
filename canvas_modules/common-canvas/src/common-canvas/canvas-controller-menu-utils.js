@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2023 Elyra Authors
+ * Copyright 2017-2024 Elyra Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  */
 
 import { get } from "lodash";
-import { LINK_SELECTION_NONE, SUPER_NODE } from "./constants/canvas-constants";
+import { LINK_SELECTION_NONE, SUPER_NODE, WYSIWYG } from "./constants/canvas-constants";
 
-// Global constant to handle the canvas controller.
+// Global temporary variable to handle the canvas controller.
 let cc = null;
 
 // Returns a context menu definition for the source object passed in which
@@ -25,7 +25,7 @@ let cc = null;
 export default function getContextMenuDefiniton(source, canvasController) {
 	cc = canvasController;
 
-	const defMenu = createDefaultContextMenu(source);
+	const defMenu = createDefaultContextMenu(source, cc);
 	let menuDefinition;
 
 	if (typeof cc.handlers.contextMenuHandler === "function") {
@@ -98,6 +98,7 @@ const filterOutUnwantedDividers = (menuDef) => {
 // out editing actions that should be unavailable with a read-only canvas.
 const isEditingAction = (action) =>
 	action === "createComment" ||
+	action === "createWYSIWYGComment" ||
 	action === "colorBackground" ||
 	action === "disconnectNode" ||
 	action === "setNodeLabelEditingMode" ||
@@ -127,11 +128,11 @@ const createDefaultContextMenu = (source) => {
 
 	// Select all & add comment: canvas only
 	if (source.type === "canvas") {
-		menuDefinition = menuDefinition.concat([
-			{ action: "createComment", label: getLabel("canvas.addComment"), toolbarItem: true },
-			{ action: "selectAll", label: getLabel("canvas.selectAll") },
-			{ divider: true }
-		]);
+
+		menuDefinition = menuDefinition.concat(
+			createCommentMenu(),
+			createSelectAllMenu()
+		);
 	}
 	// Rename node
 	if (source.type === "node" && get(source, "targetObject.layout.labelEditable", false)) {
@@ -147,6 +148,7 @@ const createDefaultContextMenu = (source) => {
 	}
 	// Color objects
 	if (source.type === "comment" &&
+			source.targetObject?.contentType !== WYSIWYG &&
 			get(cc, "contextMenuConfig.defaultMenuEntries.colorBackground", true)) {
 		menuDefinition = menuDefinition.concat(
 			{ action: "colorBackground", label: getLabel("comment.colorBackground") },
@@ -292,6 +294,31 @@ const createDefaultContextMenu = (source) => {
 	}
 
 	return menuDefinition;
+};
+
+const createCommentMenu = () => {
+	if (cc.getCanvasConfig().enableWYSIWYGComments) {
+		return [
+			{ action: "createComment", label: getLabel("canvas.addComment"), toolbarItem: true },
+			{ action: "createWYSIWYGComment", label: getLabel("canvas.addWysiwygComment"), toolbarItem: true }
+		];
+	}
+	return { action: "createComment", label: getLabel("canvas.addComment"), toolbarItem: true };
+};
+
+const createSelectAllMenu = () => {
+	if (cc.areAllObjectsSelected()) {
+		return [
+			{ action: "deselectAll", label: getLabel("canvas.deselectAll") },
+			{ divider: true }
+		];
+	} else if (!cc.isPrimaryPipelineEmpty()) {
+		return [
+			{ action: "selectAll", label: getLabel("canvas.selectAll") },
+			{ divider: true }
+		];
+	}
+	return [];
 };
 
 const createEditMenu = (source, includePaste) => {

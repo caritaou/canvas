@@ -18,14 +18,9 @@ import React from "react";
 import PropTypes from "prop-types";
 import ToolbarSubMenuItem from "./toolbar-sub-menu-item.jsx";
 import ToolbarDividerItem from "./toolbar-divider-item";
+import KeyboardUtils from "../common-canvas/keyboard-utils.js";
 
 import { adjustSubAreaPosition, generateSubAreaStyle } from "./toolbar-sub-utils.js";
-
-const ESC_KEY = 27;
-const LEFT_ARROW_KEY = 37;
-const UP_ARROW_KEY = 38;
-const RIGHT_ARROW_KEY = 39;
-const DOWN_ARROW_KEY = 40;
 
 class ToolbarSubMenu extends React.Component {
 	constructor(props) {
@@ -41,19 +36,24 @@ class ToolbarSubMenu extends React.Component {
 	}
 
 	componentDidMount() {
-		if (this.props.containingDivId && this.props.subMenuActions.length > 0) {
+		if (this.props.containingDivId && this.props.subMenuActions?.length > 0) {
 			adjustSubAreaPosition(this.areaRef,
 				this.props.containingDivId, this.props.expandDirection, this.props.actionItemRect);
 		}
 
 		if (this.state.focusAction === "subarea") {
-			this.setFocusOnFirstItem();
+			const selectedItem = this.getFirstCheckedItem();
+			if (selectedItem) {
+				this.setFocusAction(selectedItem.action);
+			} else {
+				this.setFocusOnFirstItem();
+			}
 		}
 	}
 
 	componentDidUpdate() {
 		if (this.state.focusAction !== "subarea") {
-			const actionObj = this.props.subMenuActions.find((sma) => sma.action === this.state.focusAction);
+			const actionObj = this.props.subMenuActions?.find((sma) => sma.action === this.state.focusAction);
 			if (!actionObj?.enable) {
 				const actionToSet = this.getClosestEnabledAction(this.state.focusAction);
 				if (actionToSet !== null) {
@@ -63,23 +63,22 @@ class ToolbarSubMenu extends React.Component {
 		}
 	}
 
+	// Handles keyboard input on a sub-menu. The Esc, Left arrow and Right arrow
+	// key presses are handled in toolbar-sub-menu-item.jsx.
 	onKeyDown(evt) {
-		if (evt.keyCode === ESC_KEY) {
-			this.props.closeSubArea();
+		if (KeyboardUtils.closeSubArea(evt)) {
 			evt.stopPropagation(); // Stop propagation in a case we are a cascade menu
 
-		} else if (evt.keyCode === UP_ARROW_KEY) {
+		} else if (KeyboardUtils.setFocusOnPreviousMenuItem(evt)) {
 			this.setFocusOnPreviousItem();
 			evt.stopPropagation(); // Stop propagation in a case we are a cascade menu
 
-		} else if (evt.keyCode === DOWN_ARROW_KEY) {
+		} else if (KeyboardUtils.setFocusOnNextMenuItem(evt)) {
 			this.setFocusOnNextItem();
 			evt.stopPropagation(); // Stop propagation in a case we are a cascade menu
 
-		} else if (evt.keyCode === LEFT_ARROW_KEY) {
-			evt.stopPropagation(); // Stop propagation in a case we are a cascade menu
-
-		} else if (evt.keyCode === RIGHT_ARROW_KEY) {
+		} else if (KeyboardUtils.openSubAreaFromMenu(evt) ||
+					KeyboardUtils.closeSubAreaToMenu(evt)) {
 			evt.stopPropagation(); // Stop propagation in a case we are a cascade menu
 		}
 	}
@@ -117,18 +116,18 @@ class ToolbarSubMenu extends React.Component {
 	}
 
 	getClosestEnabledAction(action) {
-		const index = this.props.subMenuActions.findIndex((sma) => sma.action === action);
+		const index = this.props.subMenuActions?.findIndex((sma) => sma.action === action);
 		let newAction = null;
 		let indexUp = index + 1;
 		let indexDown = index - 1;
 
-		while ((indexDown > -1 || indexUp < this.props.subMenuActions.length) && newAction === null) {
+		while ((indexDown > -1 || indexUp < this.props.subMenuActions?.length) && newAction === null) {
 			if (indexDown > -1 && this.props.subMenuActions[indexDown].enable) {
 				newAction = this.props.subMenuActions[indexDown].action;
 			} else {
 				indexDown--;
 			}
-			if (indexUp < this.props.subMenuActions.length && this.props.subMenuActions[indexUp].enable) {
+			if (indexUp < this.props.subMenuActions?.length && this.props.subMenuActions[indexUp].enable) {
 				newAction = this.props.subMenuActions[indexUp].action;
 			} else {
 				indexUp++;
@@ -140,7 +139,7 @@ class ToolbarSubMenu extends React.Component {
 	getFocusableActions() {
 		const focusableActions = [];
 
-		for (let i = 0; i < this.props.subMenuActions.length; i++) {
+		for (let i = 0; i < this.props.subMenuActions?.length; i++) {
 			if (this.props.subMenuActions[i].enable || this.props.subMenuActions[i].jsx) {
 				focusableActions.push(this.props.subMenuActions[i]);
 			}
@@ -165,12 +164,16 @@ class ToolbarSubMenu extends React.Component {
 		return focuableActions[0];
 	}
 
+	getFirstCheckedItem() {
+		return this.props.subMenuActions.find((a) => a.isSelected);
+	}
+
 	// Generates an array of JSX objects for a sub-menu defined by the
 	// prop subMenuActions parameter array.
 	generateSubMenuItems() {
 		const newItems = [];
 
-		for (let i = 0; i < this.props.subMenuActions.length; i++) {
+		for (let i = 0; i < this.props.subMenuActions?.length; i++) {
 			const actionObj = this.props.subMenuActions[i];
 			if (actionObj) {
 				newItems.push(this.generateSubMenuItem(actionObj, i));
@@ -214,7 +217,7 @@ class ToolbarSubMenu extends React.Component {
 	}
 
 	render() {
-		if (this.props.subMenuActions.length > 0) {
+		if (this.props.subMenuActions?.length > 0) {
 			const style = this.props.isCascadeMenu
 				? generateSubAreaStyle(this.props.expandDirection, this.props.actionItemRect)
 				: null;
@@ -234,7 +237,7 @@ class ToolbarSubMenu extends React.Component {
 }
 
 ToolbarSubMenu.propTypes = {
-	subMenuActions: PropTypes.array.isRequired,
+	subMenuActions: PropTypes.array, // subMenuActions may occasionally be null, when menu is refreshed by React.
 	instanceId: PropTypes.number.isRequired,
 	toolbarActionHandler: PropTypes.func,
 	closeSubArea: PropTypes.func,
