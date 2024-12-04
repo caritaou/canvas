@@ -1,0 +1,110 @@
+{
+	"current_parameters": {
+		"job-editor-terminal-nodes-table": [
+			"id1FCV46ELNWI",
+			"id3NHX9SJ2YQ9",
+			"id5IDXCXMQLJI",
+			"id7GRWC86ND1G",
+			"id1UBWCHZY62B",
+			"id7QLXA2GEXNW",
+			"id276W5SFFYZG",
+			"id6QPV868JICX",
+			"id4XGXJWVQBJY",
+			"id18AWRJ7E89E",
+			"id7CTVJ73ZHAI",
+			"id17NX6GXPJUU",
+			"id3PNX3TRHU3Y",
+			"id69AX1UWPMIS",
+			"id8BSVBIFGBGE",
+			"id1S8VLVYCALS",
+			"id3FXV45KVLI",
+			"id5KPVBXSJ44S",
+			"id42TW8S5I248",
+			"id14WUS9HRYN4",
+			"id4KJVEYJU6TJ",
+			"id7PW9166LNR",
+			"id4DWR1BBIWW",
+			"id5KIRGGJ3FYT",
+			"id7YLXILM78N5",
+			"id6NIW94YPE21",
+			"id8I6RH2V91XW",
+			"id696VVXDR3P3",
+			"id7F2VLHHAK2K",
+			"idIHWTBNH1KT",
+			"id72NXYLGP1LS",
+			"id3RTWT3DQAR8",
+			"id3VC1ZFUFR7DI",
+			"id4HYWFK4H2VQ",
+			"id8J8WLRAXTCP",
+			"id5PVV9ALFJ76",
+			"id5UHVWIAH1UL",
+			"id6MBWU8ZEAJ5",
+			"id81TV5RRSNJW",
+			"id26XVVWU6E1C",
+			"id55ZUWHI527L",
+			"id3XKWK8R2V9D",
+			"idX4V1LBBKU7",
+			"id3EYWCWHCBUU",
+			"id6UQVLEFT7LT",
+			"id7SPUV61FCNE",
+			"id34UVCK31PFV"
+		]
+	},
+	"parameters": [
+		{
+			"id": "job-editor-terminal-nodes-table",
+			"type": "array[job-editor-terminal-nodes-table]"
+		}
+	],
+	"complex_types": [
+		{
+			"id": "job-editor-terminal-nodes-table",
+			"parameters": [
+				{
+					"id": "job-editor-terminal-nodes",
+					"type": "string"
+				}
+			]
+		}
+	],
+	"uihints": {
+		"id": "job-editor-terminal-nodes-table",
+		"parameter_info": [
+			{
+				"parameter_ref": "job-editor-terminal-nodes-table",
+				"rows": 6,
+				"control": "readonlyTable"
+			}
+		],
+		"complex_type_info": [
+			{
+				"complex_type_ref": "job-editor-terminal-nodes-table",
+				"row_selection": "multiple",
+				"moveable_rows": true,
+				"parameters": [
+					{
+						"parameter_ref": "job-editor-terminal-nodes",
+						"label": {
+							"resource_key": "job-editor-terminal-nodes-table.label"
+						},
+						"control": "custom",
+						"custom_control_id": "job-editor-custom-icon-label-control"
+					}
+				]
+			}
+		],
+		"group_info": [
+			{
+				"id": "nodesTableGroup",
+				"type": "controls",
+				"class_name": "job-editor-terminal-nodes-table",
+				"parameter_refs": [
+					"job-editor-terminal-nodes-table"
+				]
+			}
+		]
+	},
+	"resources": {
+		"job-editor-terminal-nodes-table.label": "Terminal nodes"
+	}
+}
